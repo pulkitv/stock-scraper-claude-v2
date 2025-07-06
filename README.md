@@ -95,10 +95,3 @@ MIT License
 ## Contributing
 Pull requests are welcome. For major changes, please open an issue first.
 
-## Screenshots
-
-### Web Interface
-![Web Interface](screenshot-web.png)
-
-### Desktop GUI
-![Desktop GUI](screenshot-gui.png)
