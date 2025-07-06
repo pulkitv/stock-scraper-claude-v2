@@ -368,21 +368,33 @@ class EnhancedScreenerScraper:
             print(f"🔍 Attempting to download: {url}")
             print(f"📄 Filename: {filename}")
             
-            # Special handling for BSE India URLs
-            if 'bseindia.com' in url and 'AnnPdfOpen.aspx' in url:
-                print(f"🎯 Detected BSE India URL, converting to direct PDF link...")
+            # Check if this is a BSE URL
+            if 'bseindia.com' in url:
+                print(f"🎯 BSE URL detected!")
                 
-                # Extract the PDF filename from the URL
-                import re
-                pdf_match = re.search(r'Pname=([^&]+\.pdf)', url)
-                if pdf_match:
-                    pdf_filename = pdf_match.group(1)
-                    # Convert to direct PDF URL
-                    direct_pdf_url = f"https://www.bseindia.com/xml-data/corpfiling/AttachHis/{pdf_filename}"
-                    print(f"🔄 Converted BSE URL: {direct_pdf_url}")
-                    # Recursively call with the direct URL
-                    return self.download_document(direct_pdf_url, filename, download_dir)
-            
+                if 'AnnPdfOpen.aspx' in url:
+                    print(f"🔄 BSE redirect URL detected, converting...")
+                    
+                    # Extract the PDF filename from the URL
+                    import re
+                    pdf_match = re.search(r'Pname=([^&]+\.pdf)', url)
+                    if pdf_match:
+                        pdf_filename = pdf_match.group(1)
+                        # Convert to direct PDF URL
+                        direct_pdf_url = f"https://www.bseindia.com/xml-data/corpfiling/AttachHis/{pdf_filename}"
+                        print(f"✅ BSE URL converted:")
+                        print(f"   From: {url}")
+                        print(f"   To:   {direct_pdf_url}")
+                        
+                        # Recursively call with the direct URL
+                        return self.download_document(direct_pdf_url, filename, download_dir)
+                    else:
+                        print(f"❌ Could not extract PDF filename from BSE URL")
+                else:
+                    print(f"📊 BSE URL but not AnnPdfOpen.aspx format")
+            else:
+                print(f"📊 Non-BSE URL: {url[:50]}...")
+        
             # Check if URL is valid
             if not url or not url.startswith('http'):
                 print(f"❌ Invalid URL: {url}")
@@ -425,34 +437,23 @@ class EnhancedScreenerScraper:
                     file_size = os.path.getsize(file_path)
                     print(f"✅ Downloaded: {filename} ({file_size} bytes)")
                     return True
-                elif 'text/html' in content_type:
-                    # This is likely a page containing the PDF link, not the PDF itself
-                    print(f"🔄 Found HTML page, looking for actual PDF link...")
-                    
-                    # Try to find the actual PDF link
-                    actual_pdf_url = self.get_actual_pdf_link(url)
-                    if actual_pdf_url and actual_pdf_url != url:
-                        print(f"🎯 Found actual PDF URL: {actual_pdf_url}")
-                        # Recursively try to download the actual PDF (but prevent infinite loops)
-                        if not hasattr(self, '_download_depth'):
-                            self._download_depth = 0
-                        
-                        if self._download_depth < 3:  # Max 3 levels deep
-                            self._download_depth += 1
-                            result = self.download_document(actual_pdf_url, filename, download_dir)
-                            self._download_depth -= 1
-                            return result
-                        else:
-                            print(f"❌ Maximum recursion depth reached")
-                            return False
-                    else:
-                        print(f"❌ Could not find actual PDF link in HTML page")
-                        return False
                 else:
                     print(f"❌ Not a PDF file. Content-Type: {content_type}")
+                    # Show preview of what we got
+                    if 'text' in content_type:
+                        try:
+                            preview = response.text[:300]
+                            print(f"📄 Content preview: {preview}")
+                        except:
+                            print(f"📄 Could not preview content")
                     return False
             else:
                 print(f"❌ HTTP Error: {response.status_code}")
+                try:
+                    error_content = response.text[:200]
+                    print(f"📄 Error content: {error_content}")
+                except:
+                    print(f"📄 Could not read error content")
                 return False
                 
         except requests.exceptions.Timeout:

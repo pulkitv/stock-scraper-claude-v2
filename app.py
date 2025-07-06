@@ -491,6 +491,44 @@ def debug_tcs_reports():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/version')
+def get_version():
+    """Check current version and BSE handling"""
+    return jsonify({
+        'version': '2.1-BSE-Fix',
+        'timestamp': datetime.now().isoformat(),
+        'bse_handling': 'enabled',
+        'features': [
+            'BSE URL conversion',
+            'Annual report filtering',
+            'Enhanced logging'
+        ]
+    })
+
+@app.route('/api/debug-url', methods=['POST'])
+def debug_url():
+    """Debug a specific URL"""
+    data = request.json or {}
+    test_url = data.get('url')
+    
+    if not test_url:
+        return jsonify({'error': 'URL required'}), 400
+    
+    try:
+        scraper = EnhancedScreenerScraper(delay=1)
+        
+        # Test the URL
+        result = scraper.download_document(test_url, 'test.pdf', '/tmp')
+        
+        return jsonify({
+            'url': test_url,
+            'success': result,
+            'message': 'Check server logs for detailed output'
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 if __name__ == '__main__':
     # This block only runs when app.py is executed directly
     # NOT when imported by gunicorn
