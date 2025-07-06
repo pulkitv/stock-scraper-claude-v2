@@ -36,6 +36,8 @@ except ImportError as e:
             return f"{company}_doc_{index}.pdf"
         def download_document(self, url, filename, download_dir):
             return False
+        def get_actual_pdf_link(self, url):
+            return None
     
     class FallbackCompanyData:
         def __init__(self, **kwargs):
@@ -338,7 +340,7 @@ def clear_files():
 @app.route('/api/test-download', methods=['POST'])
 def test_download():
     """Test downloading a specific URL"""
-    data = request.json
+    data = request.json or {}
     test_url = data.get('url')
     
     if not test_url:
@@ -393,6 +395,101 @@ def internal_error(error):
 def not_found(error):
     """Handle 404 errors"""
     return jsonify({'error': 'Not found'}), 404
+
+@app.route('/api/debug-annual-reports/<symbol>')
+def debug_annual_reports(symbol):
+    """Debug annual reports for a specific company"""
+    try:
+        scraper = EnhancedScreenerScraper(delay=1)
+        
+        # Find company
+        company_url = scraper.find_company_by_symbol(symbol.upper())
+        if not company_url:
+            return jsonify({'error': f'Could not find company page for {symbol}'}), 404
+        
+        # Extract data
+        company_data = scraper.extract_concall_data(company_url)
+        if not company_data:
+            return jsonify({'error': f'Could not extract data for {symbol}'}), 404
+        
+        # Test each annual report URL
+        debug_results = []
+        for report in company_data.annual_reports:
+            try:
+                url = report['url']
+                
+                # Test the URL
+                response = requests.get(url, timeout=10)
+                
+                # Try to find actual PDF link if it's HTML
+                actual_pdf_url = None
+                if 'text/html' in response.headers.get('Content-Type', '').lower():
+                    actual_pdf_url = scraper.get_actual_pdf_link(url)
+                
+                debug_results.append({
+                    'title': report['title'],
+                    'original_url': url,
+                    'status_code': response.status_code,
+                    'content_type': response.headers.get('Content-Type', ''),
+                    'content_length': response.headers.get('Content-Length', ''),
+                    'is_html': 'text/html' in response.headers.get('Content-Type', '').lower(),
+                    'actual_pdf_url': actual_pdf_url,
+                    'year': report.get('year')
+                })
+                
+            except Exception as e:
+                debug_results.append({
+                    'title': report['title'],
+                    'original_url': report['url'],
+                    'error': str(e)
+                })
+        
+        return jsonify({
+            'company': symbol,
+            'company_name': company_data.company_name,
+            'annual_reports_found': len(company_data.annual_reports),
+            'debug_results': debug_results
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/debug-tcs-reports')
+def debug_tcs_reports():
+    """Debug TCS annual reports specifically"""
+    try:
+        scraper = EnhancedScreenerScraper(delay=1)
+        
+        # Find TCS
+        company_url = scraper.find_company_by_symbol('TCS')
+        if not company_url:
+            return jsonify({'error': 'Could not find TCS page'}), 404
+        
+        # Extract data
+        company_data = scraper.extract_concall_data(company_url)
+        if not company_data:
+            return jsonify({'error': 'Could not extract TCS data'}), 404
+        
+        # Show all annual reports found
+        reports_info = []
+        for report in company_data.annual_reports:
+            parsed_date = report.get('parsed_date')
+            reports_info.append({
+                'title': report['title'],
+                'url': report['url'],
+                'year': report.get('year'),
+                'date': report.get('date'),
+                'parsed_date': parsed_date.strftime('%Y-%m-%d') if parsed_date else None
+            })
+        
+        return jsonify({
+            'company_name': company_data.company_name,
+            'total_annual_reports': len(company_data.annual_reports),
+            'annual_reports': reports_info
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     # This block only runs when app.py is executed directly

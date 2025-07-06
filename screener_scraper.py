@@ -176,13 +176,81 @@ class EnhancedScreenerScraper:
             
             text_lower = text.lower()
             
-            # Check for annual reports first
-            is_annual_report = any(pattern in text_lower for pattern in annual_patterns)
+            # Check for annual reports first - make it more specific
+            is_annual_report = False
             
+            # Only consider links that are specifically annual reports
+            annual_report_indicators = [
+                'annual report',
+                'yearly report',
+                'annual accounts',
+                'financial statements',
+                'audited financial results'
+            ]
+            
+            financial_year_indicators = [
+                'financial year 20',
+                'fy 20',
+                'fy20'
+            ]
+            
+            # Check for explicit annual report mentions
+            for indicator in annual_report_indicators:
+                if indicator in text_lower:
+                    is_annual_report = True
+                    break
+            
+            # Check for Financial Year mentions ONLY if they seem like annual reports
+            if not is_annual_report:
+                for indicator in financial_year_indicators:
+                    if indicator in text_lower:
+                        # Additional validation - make sure it's not an announcement
+                        if not any(exclude in text_lower for exclude in [
+                            'announcement', 'regulation 30', 'lodr', 'credit rating', 
+                            'rating', 'disclosure', 'intimation', 'notice', 'compliance',
+                            'outcome', 'result', 'meeting', 'board', 'esg', 'crisil'
+                        ]):
+                            # Additional check - should contain report-like words
+                            if any(report_word in text_lower for report_word in [
+                                'report', 'statement', 'accounts', 'financial', 'audit'
+                            ]):
+                                is_annual_report = True
+                                break
+
             if is_annual_report:
-                # Extract year from text
-                year_match = re.search(r'20\d{2}', text)
-                year = int(year_match.group()) if year_match else None
+                # Better year extraction patterns
+                year = None
+                
+                # Try different year patterns
+                patterns = [
+                    r'financial year\s*(\d{4})',        # "Financial Year 2023"
+                    r'fy\s*(\d{4})',                    # "FY 2023"
+                    r'fy(\d{4})',                       # "FY2023"
+                    r'year\s*(\d{4})',                  # "Year 2023"
+                    r'(\d{4})\s*financial year',        # "2023 Financial Year"
+                    r'(\d{4})\s*fy',                    # "2023 FY"
+                    r'\b(20\d{2})\b',                   # Any 4-digit year starting with 20
+                    r'(\d{2})\s*financial year',        # "23 Financial Year" (convert to 2023)
+                    r'fy\s*(\d{2})\b',                  # "FY 23" (convert to 2023)
+                ]
+                
+                for pattern in patterns:
+                    match = re.search(pattern, text.lower())
+                    if match:
+                        year_str = match.group(1)
+                        if len(year_str) == 2:  # Convert 2-digit year to 4-digit
+                            year_int = int(year_str)
+                            if year_int >= 90:  # 90-99 = 1990-1999
+                                year = 1900 + year_int
+                            else:  # 00-89 = 2000-2089
+                                year = 2000 + year_int
+                        else:
+                            year = int(year_str)
+                        break
+                
+                print(f"🔍 Found annual report: {text}")
+                print(f"🔗 Original href: {href}")
+                print(f"📅 Extracted year: {year}")
                 
                 # Build full URL
                 if str(href).startswith('http'):
@@ -190,17 +258,13 @@ class EnhancedScreenerScraper:
                 else:
                     full_url = urljoin(self.base_url, str(href))
                 
-                print(f"🔍 Found annual report: {text}")
-                print(f"🔗 URL: {full_url}")
-                print(f"📅 Year: {year}")
-                
                 # Add to annual reports
                 annual_reports.append({
                     'title': text,
                     'url': full_url,
                     'type': 'annual_report',
                     'date': f"FY{year}" if year else "FY Unknown",
-                    'parsed_date': datetime(year, 3, 31) if year else None,
+                    'parsed_date': datetime(year, 3, 31) if year else datetime.min,
                     'quarter': None,
                     'year': year
                 })
@@ -232,8 +296,17 @@ class EnhancedScreenerScraper:
         concalls.sort(key=lambda x: x.parsed_date or datetime.min, reverse=True)
         concalls = concalls[:5]
         
+        # Sort annual reports by date and limit to 3 most recent
+        print(f"📊 Found {len(annual_reports)} total annual reports before sorting:")
+        for i, report in enumerate(annual_reports):
+            print(f"  {i+1}. {report['title']} (Year: {report.get('year', 'Unknown')})")
+        
         annual_reports.sort(key=lambda x: x.get('parsed_date') or datetime.min, reverse=True)
-        annual_reports = annual_reports[:3]
+        annual_reports = annual_reports[:5]  # Increased from 3 to 5
+        
+        print(f"📊 Keeping {len(annual_reports)} most recent annual reports:")
+        for i, report in enumerate(annual_reports):
+            print(f"  {i+1}. {report['title']} (Year: {report.get('year', 'Unknown')})")
         
         return CompanyData(
             company_name=company_name,
@@ -248,11 +321,11 @@ class EnhancedScreenerScraper:
         # Clean company symbol
         company_clean = company.replace('/', '_').replace('\\', '_')
         
-        # Get date info - works with both ConcallDocument and dict-like objects
+        # Get date info - works with both ConcallDocument and doc-like objects
         date_part = getattr(doc, 'date', None) or doc.get('date', f'doc-{index}') if hasattr(doc, 'get') else f'doc-{index}'
         date_part = str(date_part).replace('/', '-').replace(' ', '-')
         
-        # Get document type - works with both ConcallDocument and dict-like objects  
+        # Get document type - works with both ConcallDocument and doc-like objects  
         doc_type = getattr(doc, 'doc_type', None) or doc.get('doc_type', 'document') if hasattr(doc, 'get') else 'document'
         doc_type = str(doc_type).lower()
         
@@ -292,9 +365,23 @@ class EnhancedScreenerScraper:
     def download_document(self, url: str, filename: str, download_dir: str) -> bool:
         """Download a document from the given URL"""
         try:
-            # Add better logging
             print(f"🔍 Attempting to download: {url}")
             print(f"📄 Filename: {filename}")
+            
+            # Special handling for BSE India URLs
+            if 'bseindia.com' in url and 'AnnPdfOpen.aspx' in url:
+                print(f"🎯 Detected BSE India URL, converting to direct PDF link...")
+                
+                # Extract the PDF filename from the URL
+                import re
+                pdf_match = re.search(r'Pname=([^&]+\.pdf)', url)
+                if pdf_match:
+                    pdf_filename = pdf_match.group(1)
+                    # Convert to direct PDF URL
+                    direct_pdf_url = f"https://www.bseindia.com/xml-data/corpfiling/AttachHis/{pdf_filename}"
+                    print(f"🔄 Converted BSE URL: {direct_pdf_url}")
+                    # Recursively call with the direct URL
+                    return self.download_document(direct_pdf_url, filename, download_dir)
             
             # Check if URL is valid
             if not url or not url.startswith('http'):
@@ -314,10 +401,17 @@ class EnhancedScreenerScraper:
                 'Upgrade-Insecure-Requests': '1',
             }
             
-            response = requests.get(url, headers=headers, timeout=30, allow_redirects=True)
+            print(f"⏰ Making request to: {url}")
+            start_time = time.time()
+            
+            response = requests.get(url, headers=headers, timeout=15, allow_redirects=True)
+            
+            request_time = time.time() - start_time
+            print(f"⏰ Request completed in {request_time:.2f} seconds")
             print(f"📊 Response status: {response.status_code}")
             print(f"📊 Content-Type: {response.headers.get('Content-Type', 'Unknown')}")
             print(f"📊 Content-Length: {response.headers.get('Content-Length', 'Unknown')}")
+            print(f"📊 Final URL: {response.url}")
             
             if response.status_code == 200:
                 # Check if it's actually a PDF or document
@@ -331,15 +425,39 @@ class EnhancedScreenerScraper:
                     file_size = os.path.getsize(file_path)
                     print(f"✅ Downloaded: {filename} ({file_size} bytes)")
                     return True
+                elif 'text/html' in content_type:
+                    # This is likely a page containing the PDF link, not the PDF itself
+                    print(f"🔄 Found HTML page, looking for actual PDF link...")
+                    
+                    # Try to find the actual PDF link
+                    actual_pdf_url = self.get_actual_pdf_link(url)
+                    if actual_pdf_url and actual_pdf_url != url:
+                        print(f"🎯 Found actual PDF URL: {actual_pdf_url}")
+                        # Recursively try to download the actual PDF (but prevent infinite loops)
+                        if not hasattr(self, '_download_depth'):
+                            self._download_depth = 0
+                        
+                        if self._download_depth < 3:  # Max 3 levels deep
+                            self._download_depth += 1
+                            result = self.download_document(actual_pdf_url, filename, download_dir)
+                            self._download_depth -= 1
+                            return result
+                        else:
+                            print(f"❌ Maximum recursion depth reached")
+                            return False
+                    else:
+                        print(f"❌ Could not find actual PDF link in HTML page")
+                        return False
                 else:
                     print(f"❌ Not a PDF file. Content-Type: {content_type}")
-                    # Log first 200 characters of content to see what we got
-                    print(f"📄 Content preview: {response.text[:200]}")
                     return False
             else:
                 print(f"❌ HTTP Error: {response.status_code}")
                 return False
                 
+        except requests.exceptions.Timeout:
+            print(f"❌ Request timeout after 15 seconds")
+            return False
         except requests.exceptions.RequestException as e:
             print(f"❌ Request error: {e}")
             return False
@@ -355,6 +473,81 @@ class EnhancedScreenerScraper:
         
         company_data = self.extract_concall_data(company_url)
         return company_data
+    
+    def get_actual_pdf_link(self, page_url: str) -> Optional[str]:
+        """Get the actual PDF download link from a page that contains the link"""
+        try:
+            print(f"🔍 Looking for PDF link in page: {page_url}")
+            
+            response = self._make_request(page_url)
+            if not response:
+                return None
+                
+            soup = BeautifulSoup(response.content, 'html.parser')
+            
+            # Look for direct PDF links
+            pdf_links = []
+            
+            # Method 1: Look for links with .pdf in href
+            for link in soup.find_all('a', href=True):
+                if not isinstance(link, Tag):
+                    continue
+                href = link.get('href')
+                if href and '.pdf' in str(href).lower():
+                    if str(href).startswith('http'):
+                        pdf_links.append(str(href))
+                    else:
+                        pdf_links.append(urljoin(self.base_url, str(href)))
+            
+            # Method 2: Look for links with text containing "download", "pdf", etc.
+            for link in soup.find_all('a', href=True):
+                if not isinstance(link, Tag):
+                    continue
+                text = link.get_text(strip=True).lower()
+                if any(word in text for word in ['download', 'pdf', 'view', 'open']):
+                    href = link.get('href')
+                    if href:
+                        if str(href).startswith('http'):
+                            pdf_links.append(str(href))
+                        else:
+                            pdf_links.append(urljoin(self.base_url, str(href)))
+            
+            # Method 3: Look for embed or iframe tags that might contain PDF
+            for embed in soup.find_all(['embed', 'iframe'], src=True):
+                if not isinstance(embed, Tag):
+                    continue
+                src = embed.get('src')
+                if src and '.pdf' in str(src).lower():
+                    if str(src).startswith('http'):
+                        pdf_links.append(str(src))
+                    else:
+                        pdf_links.append(urljoin(self.base_url, str(src)))
+            
+            # Method 4: Look for script tags that might contain PDF URLs
+            for script in soup.find_all('script'):
+                script_text = script.get_text()
+                if script_text:
+                    import re
+                    pdf_matches = re.findall(r'https?://[^\s"\']+\.pdf', script_text, re.IGNORECASE)
+                    pdf_links.extend(pdf_matches)
+            
+            # Remove duplicates and filter valid links
+            unique_pdf_links = list(set(pdf_links))
+            
+            print(f"📄 Found {len(unique_pdf_links)} potential PDF links")
+            for i, link in enumerate(unique_pdf_links):
+                print(f"  {i+1}. {link}")
+            
+            # Return the first valid PDF link
+            for pdf_link in unique_pdf_links:
+                if pdf_link and pdf_link.startswith('http'):
+                    return pdf_link
+            
+            return None
+            
+        except Exception as e:
+            print(f"❌ Error getting PDF link: {e}")
+            return None
 
 # For backward compatibility
 ScreenerScraper = EnhancedScreenerScraper
