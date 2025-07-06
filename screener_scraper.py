@@ -368,33 +368,6 @@ class EnhancedScreenerScraper:
             print(f"🔍 Attempting to download: {url}")
             print(f"📄 Filename: {filename}")
             
-            # Check if this is a BSE URL
-            if 'bseindia.com' in url:
-                print(f"🎯 BSE URL detected!")
-                
-                if 'AnnPdfOpen.aspx' in url:
-                    print(f"🔄 BSE redirect URL detected, converting...")
-                    
-                    # Extract the PDF filename from the URL
-                    import re
-                    pdf_match = re.search(r'Pname=([^&]+\.pdf)', url)
-                    if pdf_match:
-                        pdf_filename = pdf_match.group(1)
-                        # Convert to direct PDF URL
-                        direct_pdf_url = f"https://www.bseindia.com/xml-data/corpfiling/AttachHis/{pdf_filename}"
-                        print(f"✅ BSE URL converted:")
-                        print(f"   From: {url}")
-                        print(f"   To:   {direct_pdf_url}")
-                        
-                        # Recursively call with the direct URL
-                        return self.download_document(direct_pdf_url, filename, download_dir)
-                    else:
-                        print(f"❌ Could not extract PDF filename from BSE URL")
-                else:
-                    print(f"📊 BSE URL but not AnnPdfOpen.aspx format")
-            else:
-                print(f"📊 Non-BSE URL: {url[:50]}...")
-        
             # Check if URL is valid
             if not url or not url.startswith('http'):
                 print(f"❌ Invalid URL: {url}")
@@ -403,9 +376,137 @@ class EnhancedScreenerScraper:
             # Create directory if it doesn't exist
             os.makedirs(download_dir, exist_ok=True)
             
-            # Make request with better headers
+            # Special handling for BSE URLs
+            if 'bseindia.com' in url:
+                print(f"🎯 BSE URL detected!")
+                
+                if 'AnnPdfOpen.aspx' in url:
+                    print(f"🔄 BSE redirect URL detected, handling with session...")
+                    
+                    # Use session to handle cookies and redirects
+                    session = requests.Session()
+                    
+                    # First, visit the BSE homepage to get cookies
+                    try:
+                        print(f"🍪 Getting BSE session cookies...")
+                        session.get('https://www.bseindia.com', timeout=10)
+                    except:
+                        pass  # Continue even if this fails
+                    
+                    # Better headers for BSE
+                    headers = {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                        'Accept-Language': 'en-US,en;q=0.5',
+                        'Accept-Encoding': 'gzip, deflate',
+                        'Connection': 'keep-alive',
+                        'Upgrade-Insecure-Requests': '1',
+                        'Sec-Fetch-Dest': 'document',
+                        'Sec-Fetch-Mode': 'navigate',
+                        'Sec-Fetch-Site': 'same-origin',
+                        'Referer': 'https://www.bseindia.com/',
+                        'DNT': '1',
+                        'Sec-GPC': '1'
+                    }
+                    
+                    print(f"⏰ Making request to BSE page with session...")
+                    response = session.get(url, headers=headers, timeout=20, allow_redirects=True)
+                    
+                    print(f"📊 Response status: {response.status_code}")
+                    print(f"📊 Content-Type: {response.headers.get('Content-Type', 'Unknown')}")
+                    print(f"📊 Final URL: {response.url}")
+                    
+                    if response.status_code == 200:
+                        content_type = response.headers.get('content-type', '').lower()
+                        
+                        if 'pdf' in content_type or 'application/octet-stream' in content_type:
+                            # It's a PDF, save it
+                            file_path = os.path.join(download_dir, filename)
+                            with open(file_path, 'wb') as f:
+                                f.write(response.content)
+                            
+                            file_size = os.path.getsize(file_path)
+                            print(f"✅ Downloaded: {filename} ({file_size} bytes)")
+                            return True
+                        
+                        elif 'text/html' in content_type:
+                            # It's HTML, try to extract the actual PDF link
+                            print(f"🔍 HTML page received, looking for PDF link...")
+                            
+                            from bs4 import BeautifulSoup
+                            soup = BeautifulSoup(response.content, 'html.parser')
+                            
+                            # Look for PDF links in the HTML
+                            pdf_links = []
+                            
+                            # Method 1: Look for iframe or embed with PDF
+                            for tag in soup.find_all(['iframe', 'embed'], src=True):
+                                if isinstance(tag, Tag):
+                                    src = tag.get('src')
+                                    if src and '.pdf' in src:
+                                        if str(src).startswith('http'):
+                                            pdf_links.append(str(src))
+                                        else:
+                                            pdf_links.append(f"https://www.bseindia.com{str(src)}")
+                            
+                            # Method 2: Look for JavaScript redirects
+                            for script in soup.find_all('script'):
+                                script_text = script.get_text()
+                                if script_text:
+                                    # Look for PDF URLs in JavaScript
+                                    import re
+                                    pdf_matches = re.findall(r'https?://[^\s"\']+\.pdf', script_text, re.IGNORECASE)
+                                    pdf_links.extend(pdf_matches)
+                            
+                            # Method 3: Look for meta refresh redirects
+                            for meta in soup.find_all('meta', {'http-equiv': 'refresh'}):
+                                if isinstance(meta, Tag):
+                                    content = meta.get('content', '')
+                                    content_str = str(content).lower() if content else ''
+                                    if 'url=' in content_str:
+                                        redirect_url = str(content).split('url=')[1].split(';')[0]
+                                        if '.pdf' in redirect_url:
+                                            if redirect_url.startswith('http'):
+                                                pdf_links.append(redirect_url)
+                                            else:
+                                                pdf_links.append(f"https://www.bseindia.com{redirect_url}")
+                            
+                            # Try each PDF link
+                            for pdf_url in pdf_links:
+                                try:
+                                    print(f"🎯 Trying PDF link: {pdf_url}")
+                                    pdf_response = session.get(pdf_url, headers=headers, timeout=15)
+                                    
+                                    if pdf_response.status_code == 200:
+                                        pdf_content_type = pdf_response.headers.get('content-type', '').lower()
+                                        
+                                        if 'pdf' in pdf_content_type or 'application/octet-stream' in pdf_content_type:
+                                            file_path = os.path.join(download_dir, filename)
+                                            with open(file_path, 'wb') as f:
+                                                f.write(pdf_response.content)
+                                            
+                                            file_size = os.path.getsize(file_path)
+                                            print(f"✅ Downloaded: {filename} ({file_size} bytes)")
+                                            return True
+                                            
+                                except Exception as e:
+                                    print(f"⚠️ Failed to download from {pdf_url}: {e}")
+                                    continue
+                            
+                            print(f"❌ Could not find working PDF link in HTML")
+                            return False
+                        
+                        else:
+                            print(f"❌ Unexpected content type: {content_type}")
+                            return False
+                    
+                    else:
+                        print(f"❌ BSE request failed with status: {response.status_code}")
+                        return False
+            
+            # For non-BSE URLs, use the original method
             headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 'Accept': 'application/pdf,application/octet-stream,*/*',
                 'Accept-Language': 'en-US,en;q=0.9',
                 'Accept-Encoding': 'gzip, deflate',
@@ -422,11 +523,9 @@ class EnhancedScreenerScraper:
             print(f"⏰ Request completed in {request_time:.2f} seconds")
             print(f"📊 Response status: {response.status_code}")
             print(f"📊 Content-Type: {response.headers.get('Content-Type', 'Unknown')}")
-            print(f"📊 Content-Length: {response.headers.get('Content-Length', 'Unknown')}")
             print(f"📊 Final URL: {response.url}")
             
             if response.status_code == 200:
-                # Check if it's actually a PDF or document
                 content_type = response.headers.get('content-type', '').lower()
                 
                 if 'pdf' in content_type or 'application/octet-stream' in content_type:
@@ -439,25 +538,13 @@ class EnhancedScreenerScraper:
                     return True
                 else:
                     print(f"❌ Not a PDF file. Content-Type: {content_type}")
-                    # Show preview of what we got
-                    if 'text' in content_type:
-                        try:
-                            preview = response.text[:300]
-                            print(f"📄 Content preview: {preview}")
-                        except:
-                            print(f"📄 Could not preview content")
                     return False
             else:
                 print(f"❌ HTTP Error: {response.status_code}")
-                try:
-                    error_content = response.text[:200]
-                    print(f"📄 Error content: {error_content}")
-                except:
-                    print(f"📄 Could not read error content")
                 return False
                 
         except requests.exceptions.Timeout:
-            print(f"❌ Request timeout after 15 seconds")
+            print(f"❌ Request timeout")
             return False
         except requests.exceptions.RequestException as e:
             print(f"❌ Request error: {e}")
