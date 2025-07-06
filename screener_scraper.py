@@ -140,26 +140,31 @@ class EnhancedScreenerScraper:
         company_name = h1_tag.get_text(strip=True) if h1_tag else ""
         symbol = company_url.split('/company/')[-1].split('/')[0]
         
-        # Find documents with date extraction
+        # Initialize lists
         concalls = []
         annual_reports = []
         
-        # Look for annual reports section specifically
-        # Try to find annual reports in dedicated sections
-        annual_report_sections = soup.find_all(['section', 'div'], class_=lambda x: bool(x and ('annual' in x.lower() or 'report' in x.lower())))
-        
-        # Also look for links with "Financial Year" pattern
+        # Get all links from the page
         all_links = soup.find_all('a', href=True)
         
+        # Define annual report patterns
+        annual_patterns = [
+            'financial year',
+            'fy 20',
+            'fy20',
+            'annual report',
+            'year ended',
+            'financial year 20',
+            'financial year 19',
+            'financial year 18'
+        ]
+        
+        # Process all links
         for link in all_links:
-            # Check if it's a Tag element (not NavigableString)
-            if not hasattr(link, 'get') or not callable(getattr(link, 'get', None)):
+            if not isinstance(link, Tag):
                 continue
             
-            if isinstance(link, Tag):  # Ensure link is a Tag object
-                href = link.get('href')
-            else:
-                href = None
+            href = link.get('href')
             if not href:
                 continue
             
@@ -169,54 +174,48 @@ class EnhancedScreenerScraper:
             if len(text) < 5:
                 continue
             
-            # Check for Financial Year pattern (Annual Reports)
-            if any(pattern in text.lower() for pattern in ['financial year', 'fy 20', 'annual report', 'yearly report']):
-                # Extract year from Financial Year pattern
-                fy_match = re.search(r'financial year\s*(\d{4})', text.lower())
-                fy_short_match = re.search(r'fy\s*(\d{4})', text.lower())
-                year_match = re.search(r'\b(20\d{2})\b', text)
+            text_lower = text.lower()
+            
+            # Check for annual reports first
+            is_annual_report = any(pattern in text_lower for pattern in annual_patterns)
+            
+            if is_annual_report:
+                # Extract year from text
+                year_match = re.search(r'20\d{2}', text)
+                year = int(year_match.group()) if year_match else None
                 
-                if fy_match:
-                    year = int(fy_match.group(1))
-                    date_str = f"FY{year}"
-                    parsed_date = datetime(year, 3, 31)  # Assuming March year-end
-                elif fy_short_match:
-                    year = int(fy_short_match.group(1))
-                    date_str = f"FY{year}"
-                    parsed_date = datetime(year, 3, 31)
-                elif year_match:
-                    year = int(year_match.group(1))
-                    date_str = f"FY{year}"
-                    parsed_date = datetime(year, 3, 31)
+                # Build full URL
+                if str(href).startswith('http'):
+                    full_url = str(href)
                 else:
-                    date_str, parsed_date, quarter, year = self.extract_date_from_text(text)
+                    full_url = urljoin(self.base_url, str(href))
                 
+                print(f"🔍 Found annual report: {text}")
+                print(f"🔗 URL: {full_url}")
+                print(f"📅 Year: {year}")
+                
+                # Add to annual reports
                 annual_reports.append({
                     'title': text,
-                    'url': urljoin(self.base_url, str(href)),
+                    'url': full_url,
                     'type': 'annual_report',
-                    'date': date_str,
-                    'parsed_date': parsed_date,
+                    'date': f"FY{year}" if year else "FY Unknown",
+                    'parsed_date': datetime(year, 3, 31) if year else None,
                     'quarter': None,
-                    'year': year if 'year' in locals() else None
+                    'year': year
                 })
-                continue
             
-            # Check for concall-related content (but not annual reports)
-            elif any(word in text.lower() for word in ['concall', 'transcript', 'presentation', 'earnings call', 'investor call']):
-                # Skip if it looks like an annual report
-                if any(pattern in text.lower() for pattern in ['annual report', 'financial year', 'yearly report']):
-                    continue
-                    
+            # Check for concall-related content
+            elif any(word in text_lower for word in ['concall', 'transcript', 'presentation', 'earnings call', 'investor call']):
                 # Extract date information
                 date_str, parsed_date, quarter, year = self.extract_date_from_text(text)
                 
                 doc_type = 'concall'
-                if 'transcript' in text.lower():
+                if 'transcript' in text_lower:
                     doc_type = 'transcript'
-                elif 'presentation' in text.lower():
+                elif 'presentation' in text_lower:
                     doc_type = 'presentation'
-                elif 'earnings' in text.lower():
+                elif 'earnings' in text_lower:
                     doc_type = 'earnings_call'
                 
                 concalls.append(ConcallDocument(
@@ -228,138 +227,13 @@ class EnhancedScreenerScraper:
                     quarter=quarter,
                     year=year
                 ))
-        
-        # Try to find annual reports by looking for specific sections or tabs
-        # Look for tabs or sections that might contain annual reports
-        tabs = soup.find_all(['a', 'button', 'div'], text=re.compile(r'annual|report|financials', re.I))
-        for tab in tabs:
-            if isinstance(tab, Tag) and tab.get('href'):
-                # Visit the annual reports section
-                annual_url = urljoin(self.base_url, str(tab['href']))
-                annual_response = self._make_request(annual_url)
-                if annual_response:
-                    annual_soup = BeautifulSoup(annual_response.content, 'html.parser')
-                    annual_links = annual_soup.find_all('a', href=True)
-                    
-                    for link in annual_links:
-                        if isinstance(link, Tag):
-                            href = link.get('href')
-                            text = link.get_text(strip=True)
-                            
-                            if len(text) > 5 and any(pattern in text.lower() for pattern in ['financial year', 'fy 20', 'annual report']):
-                                # Extract year from Financial Year pattern
-                                fy_match = re.search(r'financial year\s*(\d{4})', text.lower())
-                                fy_short_match = re.search(r'fy\s*(\d{4})', text.lower())
-                                year_match = re.search(r'\b(20\d{2})\b', text)
-                                
-                                if fy_match:
-                                    year = int(fy_match.group(1))
-                                    date_str = f"FY{year}"
-                                    parsed_date = datetime(year, 3, 31)
-                                elif fy_short_match:
-                                    year = int(fy_short_match.group(1))
-                                    date_str = f"FY{year}"
-                                    parsed_date = datetime(year, 3, 31)
-                                elif year_match:
-                                    year = int(year_match.group(1))
-                                    date_str = f"FY{year}"
-                                    parsed_date = datetime(year, 3, 31)
-                                else:
-                                    continue
-                                
-                                # Check if this report is already in our list
-                                if not any(report['url'] == urljoin(self.base_url, str(href)) for report in annual_reports):
-                                    annual_reports.append({
-                                        'title': text,
-                                        'url': urljoin(self.base_url, str(href)),
-                                        'type': 'annual_report',
-                                        'date': date_str,
-                                        'parsed_date': parsed_date,
-                                        'quarter': None,
-                                        'year': year
-                                    })
-        
-        # In the annual reports section, add better link validation
-        for link in annual_links:
-            if isinstance(link, Tag):
-                href = link.get('href')
-                text = link.get_text(strip=True)
-                
-                if len(text) > 5 and any(pattern in text.lower() for pattern in ['financial year', 'fy 20', 'annual report']):
-                    # Better URL construction
-                    if href:
-                        href_str = str(href)
-                        if href_str.startswith('http'):
-                            full_url = href_str
-                        else:
-                            full_url = urljoin(self.base_url, href_str)
-                    
-                    print(f"🔍 Found annual report link: {text}")
-                    print(f"🔗 URL: {full_url}")
-                    
-                    # Validate URL format
-                    if full_url and (full_url.startswith('http://') or full_url.startswith('https://')):
-                        annual_reports.append({
-                            'title': text,
-                            'url': full_url,
-                            'year': year if year else 'unknown'
-                        })
-                    else:
-                        print(f"❌ Invalid URL format: {full_url}")
-        
-        # Look for annual reports with better pattern matching
-        annual_patterns = [
-            'financial year',
-            'fy 20',
-            'fy20',
-            'annual report',
-            'year ended',
-            'financial year 20',
-            'financial year 19',
-            'financial year 18'
-        ]
-
-        for link in annual_links:
-            if isinstance(link, Tag):
-                href = link.get('href')
-                text = link.get_text(strip=True)
-                
-                # Better pattern matching for annual reports
-                text_lower = text.lower()
-                is_annual_report = any(pattern in text_lower for pattern in annual_patterns)
-                
-                if len(text) > 5 and is_annual_report:
-                    # Extract year from text
-                    year_match = re.search(r'20\d{2}', text)
-                    year = year_match.group() if year_match else 'unknown'
-                    
-                    if href:
-                        if str(href).startswith('http'):
-                            full_url = str(href)
-                        else:
-                            full_url = urljoin(self.base_url, str(href))
-                        
-                        print(f"🔍 Found annual report: {text}")
-                        print(f"🔗 URL: {full_url}")
-                        print(f"📅 Year: {year}")
-                        
-                        # Validate URL format
-                        if full_url and (full_url.startswith('http://') or full_url.startswith('https://')):
-                            annual_reports.append({
-                                'title': text,
-                                'url': full_url,
-                                'year': year
-                            })
-                        else:
-                            print(f"❌ Invalid URL format: {full_url}")
-        
-        # Sort by date (newest first) and limit to 5 most recent concalls
+    
+        # Sort and limit results
         concalls.sort(key=lambda x: x.parsed_date or datetime.min, reverse=True)
-        concalls = concalls[:5]  # Keep only the 5 most recent documents
+        concalls = concalls[:5]
         
-        # Sort annual reports by date and limit to 3 most recent
         annual_reports.sort(key=lambda x: x.get('parsed_date') or datetime.min, reverse=True)
-        annual_reports = annual_reports[:3]  # Keep only the 3 most recent annual reports
+        annual_reports = annual_reports[:3]
         
         return CompanyData(
             company_name=company_name,
