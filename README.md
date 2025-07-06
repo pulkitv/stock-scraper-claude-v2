@@ -1,50 +1,79 @@
 # Stock Scraper - Enhanced Screener.in Document Downloader
 
 ## Overview
-An enhanced Python application for scraping financial documents from Screener.in with a user-friendly GUI interface.
+An enhanced Python application for scraping financial documents from Screener.in with both GUI and Web interfaces.
 
 ## Features
-- ✅ GUI Interface with Tkinter
-- ✅ Date extraction from document titles
-- ✅ Smart file naming with dates and types
-- ✅ Download concall transcripts and presentations
-- ✅ Download annual reports (Financial Year documents)
-- ✅ Batch processing for multiple companies
-- ✅ Progress tracking and error handling
+- ✅ **Desktop GUI Interface** with Tkinter
+- ✅ **Web Interface** with Flask (NEW!)
+- ✅ **Real-time Progress Updates** via WebSockets
+- ✅ **File Management** - List, download, and clear files
+- ✅ **Smart Date Extraction** from document titles
+- ✅ **Batch Processing** for multiple companies
+- ✅ **Document Type Selection** (transcripts, presentations, annual reports)
+- ✅ **Responsive Design** - Works on desktop and mobile
 
 ## Installation
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/YOUR_USERNAME/stock-scraper.git
+   git clone https://github.com/pulkitv/stock-scraper.git
    cd stock-scraper
    ```
 
-2. **Install required packages:**
+2. **Create virtual environment:**
    ```bash
-   pip install beautifulsoup4 requests
+   python3 -m venv stock-scraper-env
+   source stock-scraper-env/bin/activate  # On Windows: stock-scraper-env\Scripts\activate
+   ```
+
+3. **Install dependencies:**
+   ```bash
+   pip install -r requirements.txt
    ```
 
 ## Usage
 
-1. **Run the GUI application:**
-   ```bash
-   python3 screener_gui.py
-   ```
+### Web Interface (Recommended)
+```bash
+python app.py
+```
+Then open your browser and go to: `http://localhost:5000`
 
-2. **Enter company symbols** (e.g., RELIANCE, TCS, INFY)
+### Desktop GUI
+```bash
+python screener_gui.py
+```
 
-3. **Select document types** to download
+## Web Interface Features
 
-4. **Choose download folder** and click "Start Enhanced Scraping"
+- **Modern Dashboard** - Clean, responsive design
+- **Real-time Updates** - Live progress via WebSockets
+- **File Management** - View, download, and manage files
+- **Statistics** - Download counts and success rates
+- **Mobile Friendly** - Works on all devices
+
+## API Endpoints
+
+- `GET /` - Main web interface
+- `POST /api/start-scraping` - Start scraping process
+- `POST /api/stop-scraping` - Stop scraping process
+- `GET /api/status` - Get scraping status
+- `GET /api/files` - List downloaded files
+- `POST /api/files/clear` - Clear all files
+- `GET /downloads/<path>` - Download specific file
 
 ## File Structure
 ```
 stock-scraper/
-├── screener_gui.py          # Main GUI application
-├── screener_scraper.py      # Core scraping logic
-├── README.md               # This file
-└── downloads/              # Default download directory
+├── app.py                  # Flask web application
+├── screener_gui.py         # Desktop GUI application
+├── screener_scraper.py     # Core scraping logic
+├── templates/
+│   └── index.html         # Web interface template
+├── downloads/             # Downloaded files directory
+├── requirements.txt       # Python dependencies
+└── README.md             # This file
 ```
 
 ## Sample Output
@@ -53,14 +82,23 @@ Files are saved with smart naming:
 - `TCS_Q1-FY2024_transcript.pdf`
 - `INFY_Mar-2024_presentation.pdf`
 
-## Requirements
-- Python 3.7+
-- beautifulsoup4
-- requests
-- tkinter (usually comes with Python)
+## Technologies Used
+- **Backend**: Python, Flask, Flask-SocketIO
+- **Frontend**: HTML5, CSS3, JavaScript
+- **Web Scraping**: BeautifulSoup4, Requests
+- **GUI**: Tkinter
+- **Real-time**: WebSockets
 
 ## License
 MIT License
 
 ## Contributing
 Pull requests are welcome. For major changes, please open an issue first.
+
+## Screenshots
+
+### Web Interface
+![Web Interface](screenshot-web.png)
+
+### Desktop GUI
+![Desktop GUI](screenshot-gui.png)
