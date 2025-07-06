@@ -279,6 +279,80 @@ class EnhancedScreenerScraper:
                                         'year': year
                                     })
         
+        # In the annual reports section, add better link validation
+        for link in annual_links:
+            if isinstance(link, Tag):
+                href = link.get('href')
+                text = link.get_text(strip=True)
+                
+                if len(text) > 5 and any(pattern in text.lower() for pattern in ['financial year', 'fy 20', 'annual report']):
+                    # Better URL construction
+                    if href:
+                        href_str = str(href)
+                        if href_str.startswith('http'):
+                            full_url = href_str
+                        else:
+                            full_url = urljoin(self.base_url, href_str)
+                    
+                    print(f"🔍 Found annual report link: {text}")
+                    print(f"🔗 URL: {full_url}")
+                    
+                    # Validate URL format
+                    if full_url and (full_url.startswith('http://') or full_url.startswith('https://')):
+                        annual_reports.append({
+                            'title': text,
+                            'url': full_url,
+                            'year': year if year else 'unknown'
+                        })
+                    else:
+                        print(f"❌ Invalid URL format: {full_url}")
+        
+        # Look for annual reports with better pattern matching
+        annual_patterns = [
+            'financial year',
+            'fy 20',
+            'fy20',
+            'annual report',
+            'year ended',
+            'financial year 20',
+            'financial year 19',
+            'financial year 18'
+        ]
+
+        for link in annual_links:
+            if isinstance(link, Tag):
+                href = link.get('href')
+                text = link.get_text(strip=True)
+                
+                # Better pattern matching for annual reports
+                text_lower = text.lower()
+                is_annual_report = any(pattern in text_lower for pattern in annual_patterns)
+                
+                if len(text) > 5 and is_annual_report:
+                    # Extract year from text
+                    year_match = re.search(r'20\d{2}', text)
+                    year = year_match.group() if year_match else 'unknown'
+                    
+                    if href:
+                        if str(href).startswith('http'):
+                            full_url = str(href)
+                        else:
+                            full_url = urljoin(self.base_url, str(href))
+                        
+                        print(f"🔍 Found annual report: {text}")
+                        print(f"🔗 URL: {full_url}")
+                        print(f"📅 Year: {year}")
+                        
+                        # Validate URL format
+                        if full_url and (full_url.startswith('http://') or full_url.startswith('https://')):
+                            annual_reports.append({
+                                'title': text,
+                                'url': full_url,
+                                'year': year
+                            })
+                        else:
+                            print(f"❌ Invalid URL format: {full_url}")
+        
         # Sort by date (newest first) and limit to 5 most recent concalls
         concalls.sort(key=lambda x: x.parsed_date or datetime.min, reverse=True)
         concalls = concalls[:5]  # Keep only the 5 most recent documents
@@ -342,27 +416,61 @@ class EnhancedScreenerScraper:
         return f"{company_clean}_{date_part}_{doc_type}.{ext}"
     
     def download_document(self, url: str, filename: str, download_dir: str) -> bool:
-        """Download document to specified directory"""
+        """Download a document from the given URL"""
         try:
+            # Add better logging
+            print(f"🔍 Attempting to download: {url}")
+            print(f"📄 Filename: {filename}")
+            
+            # Check if URL is valid
+            if not url or not url.startswith('http'):
+                print(f"❌ Invalid URL: {url}")
+                return False
+            
             # Create directory if it doesn't exist
             os.makedirs(download_dir, exist_ok=True)
             
-            # Full file path
-            file_path = os.path.join(download_dir, filename)
+            # Make request with better headers
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'Accept': 'application/pdf,application/octet-stream,*/*',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'gzip, deflate',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1',
+            }
             
-            # Make request
-            response = self._make_request(url)
-            if not response:
+            response = requests.get(url, headers=headers, timeout=30, allow_redirects=True)
+            print(f"📊 Response status: {response.status_code}")
+            print(f"📊 Content-Type: {response.headers.get('Content-Type', 'Unknown')}")
+            print(f"📊 Content-Length: {response.headers.get('Content-Length', 'Unknown')}")
+            
+            if response.status_code == 200:
+                # Check if it's actually a PDF or document
+                content_type = response.headers.get('content-type', '').lower()
+                
+                if 'pdf' in content_type or 'application/octet-stream' in content_type:
+                    file_path = os.path.join(download_dir, filename)
+                    with open(file_path, 'wb') as f:
+                        f.write(response.content)
+                    
+                    file_size = os.path.getsize(file_path)
+                    print(f"✅ Downloaded: {filename} ({file_size} bytes)")
+                    return True
+                else:
+                    print(f"❌ Not a PDF file. Content-Type: {content_type}")
+                    # Log first 200 characters of content to see what we got
+                    print(f"📄 Content preview: {response.text[:200]}")
+                    return False
+            else:
+                print(f"❌ HTTP Error: {response.status_code}")
                 return False
-            
-            # Save file
-            with open(file_path, 'wb') as f:
-                f.write(response.content)
-            
-            return True
-            
+                
+        except requests.exceptions.RequestException as e:
+            print(f"❌ Request error: {e}")
+            return False
         except Exception as e:
-            print(f"Download error: {e}")
+            print(f"❌ Unexpected error: {e}")
             return False
     
     def scrape_company_data(self, symbol: str, download_docs=True):

@@ -13,6 +13,7 @@ import json
 from datetime import datetime
 import time
 import logging
+import requests
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -331,6 +332,34 @@ def clear_files():
             shutil.rmtree(download_folder)
             os.makedirs(download_folder, exist_ok=True)
         return jsonify({'message': 'All files cleared successfully'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/test-download', methods=['POST'])
+def test_download():
+    """Test downloading a specific URL"""
+    data = request.json
+    test_url = data.get('url')
+    
+    if not test_url:
+        return jsonify({'error': 'URL required'}), 400
+    
+    try:
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+        
+        response = requests.get(test_url, headers=headers, timeout=30)
+        
+        return jsonify({
+            'status_code': response.status_code,
+            'content_type': response.headers.get('Content-Type'),
+            'content_length': response.headers.get('Content-Length'),
+            'url': response.url,
+            'is_pdf': 'pdf' in response.headers.get('Content-Type', '').lower(),
+            'preview': response.text[:200] if response.text else 'No text content'
+        })
+        
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
