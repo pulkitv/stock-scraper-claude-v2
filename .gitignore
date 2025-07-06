@@ -38,3 +38,14 @@ Thumbs.db
 # Project specific
 downloads/
 *.log
+
+# Flask
+instance/
+*.pyc
+__pycache__/
+.env
+.venv
+
+# Web-specific
+node_modules/
+.DS_Store

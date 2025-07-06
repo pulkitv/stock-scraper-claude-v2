@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stock Scraper - Web Edition</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #2c3e50 0%, #3498db 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+        
+        .main-content {
+            padding: 40px;
+        }
+        
+        .form-section {
+            background: #f8f9fa;
+            padding: 30px;
+            border-radius: 10px;
+            margin-bottom: 30px;
+        }
+        
+        .form-group {
+            margin-bottom: 25px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #2c3e50;
+        }
+        
+        input[type="text"], input[type="number"] {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+        
+        input[type="text"]:focus, input[type="number"]:focus {
+            border-color: #3498db;
+            outline: none;
+        }
+        
+        .checkbox-group {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin-top: 10px;
+        }
+        
+        .checkbox-item {
+            display: flex;
+            align-items: center;
+            padding: 10px;
+            background: white;
+            border-radius: 8px;
+            border: 2px solid #e0e0e0;
+            transition: all 0.3s;
+        }
+        
+        .checkbox-item:hover {
+            border-color: #3498db;
+            background: #f0f8ff;
+        }
+        
+        .checkbox-item input[type="checkbox"] {
+            margin-right: 10px;
+            transform: scale(1.2);
+        }
+        
+        .button-group {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            margin-top: 30px;
+        }
+        
+        button {
+            padding: 15px 30px;
+            font-size: 16px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-weight: 600;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #27ae60 0%, #2ecc71 100%);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(46, 204, 113, 0.3);
+        }
+        
+        .btn-secondary {
+            background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+            color: white;
+        }
+        
+        .btn-secondary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(231, 76, 60, 0.3);
+        }
+        
+        .btn-info {
+            background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
+            color: white;
+        }
+        
+        .btn-info:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(52, 152, 219, 0.3);
+        }
+        
+        .progress-section {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 20px;
+            margin-top: 30px;
+        }
+        
+        .progress-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #95a5a6;
+            transition: all 0.3s;
+        }
+        
+        .status-dot.running {
+            background: #27ae60;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.2); opacity: 0.7; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        
+        .progress-log {
+            background: #2c3e50;
+            color: #ecf0f1;
+            padding: 20px;
+            border-radius: 8px;
+            height: 400px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+        
+        .log-entry {
+            margin-bottom: 5px;
+            padding: 2px 0;
+        }
+        
+        .log-entry.success { color: #2ecc71; }
+        .log-entry.error { color: #e74c3c; }
+        .log-entry.info { color: #3498db; }
+        .log-entry.download { color: #f39c12; }
+        .log-entry.complete { color: #9b59b6; }
+        
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+        
+        .stat-card {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+        
+        .stat-number {
+            font-size: 2em;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        
+        .stat-label {
+            color: #7f8c8d;
+            margin-top: 5px;
+        }
+        
+        .hidden {
+            display: none;
+        }
+        
+        .help-text {
+            font-size: 0.9em;
+            color: #7f8c8d;
+            margin-top: 5px;
+        }
+        
+        .files-section {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 20px;
+            margin-top: 30px;
+        }
+        
+        .files-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .files-header h3 {
+            margin: 0;
+            color: #2c3e50;
+        }
+        
+        .files-actions {
+            display: flex;
+            gap: 10px;
+        }
+        
+        .files-actions button {
+            padding: 8px 16px;
+            font-size: 14px;
+        }
+        
+        .files-list {
+            background: white;
+            border-radius: 8px;
+            border: 1px solid #e0e0e0;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        
+        .no-files {
+            text-align: center;
+            color: #7f8c8d;
+            padding: 30px;
+            font-style: italic;
+        }
+        
+        .file-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 16px;
+            border-bottom: 1px solid #f0f0f0;
+            transition: background-color 0.2s;
+        }
+        
+        .file-item:hover {
+            background-color: #f8f9fa;
+        }
+        
+        .file-item:last-child {
+            border-bottom: none;
+        }
+        
+        .file-info {
+            flex: 1;
+        }
+        
+        .file-name {
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 4px;
+        }
+        
+        .file-meta {
+            font-size: 0.9em;
+            color: #7f8c8d;
+        }
+        
+        .file-actions {
+            display: flex;
+            gap: 8px;
+        }
+        
+        .download-btn {
+            background: #3498db;
+            color: white;
+            padding: 6px 12px;
+            border-radius: 4px;
+            text-decoration: none;
+            font-size: 0.9em;
+            transition: background-color 0.2s;
+        }
+        
+        .download-btn:hover {
+            background: #2980b9;
+            color: white;
+        }
+        
+        .company-badge {
+            background: #e74c3c;
+            color: white;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 0.8em;
+            margin-right: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚀 Stock Scraper</h1>
+            <p>Enhanced Screener.in Document Downloader - Web Edition</p>
+        </div>
+        
+        <div class="main-content">
+            <div class="form-section">
+                <h2>📊 Scraping Configuration</h2>
+                
+                <div class="form-group">
+                    <label for="companies">Company Symbols:</label>
+                    <input type="text" id="companies" placeholder="Enter symbols separated by commas (e.g., RELIANCE, TCS, INFY)" value="RELIANCE, TCS, INFY">
+                    <div class="help-text">Enter stock symbols separated by commas</div>
+                </div>
+                
+                <div class="form-group">
+                    <label>Document Types to Download:</label>
+                    <div class="checkbox-group">
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="concalls" checked>
+                            <label for="concalls">📞 Conference Call Documents</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="annual_reports" checked>
+                            <label for="annual_reports">📋 Annual Reports</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="transcripts" checked>
+                            <label for="transcripts">📝 Transcripts</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="presentations" checked>
+                            <label for="presentations">📊 Presentations</label>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="delay">Delay Between Requests (seconds):</label>
+                    <input type="number" id="delay" min="1" max="10" value="2">
+                    <div class="help-text">Higher values are more polite to the server</div>
+                </div>
+                
+                <div class="button-group">
+                    <button id="startBtn" class="btn-primary">🚀 Start Scraping</button>
+                    <button id="stopBtn" class="btn-secondary hidden">⏹️ Stop Scraping</button>
+                    <button id="clearBtn" class="btn-info">🗑️ Clear Log</button>
+                </div>
+            </div>
+            
+            <div class="progress-section">
+                <div class="progress-header">
+                    <h3>📈 Progress & Results</h3>
+                    <div class="status-indicator">
+                        <div class="status-dot" id="statusDot"></div>
+                        <span id="statusText">Ready</span>
+                    </div>
+                </div>
+                
+                <div class="progress-log" id="progressLog">
+                    <div class="log-entry info">Ready to start scraping. Configure your settings above and click "Start Scraping".</div>
+                </div>
+                
+                <div class="stats">
+                    <div class="stat-card">
+                        <div class="stat-number" id="totalDownloaded">0</div>
+                        <div class="stat-label">Files Downloaded</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number" id="companiesProcessed">0</div>
+                        <div class="stat-label">Companies Processed</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number" id="successRate">0%</div>
+                        <div class="stat-label">Success Rate</div>
+                    </div>
+                </div>
+                
+                <!-- Add this new section for downloaded files -->
+                <div class="files-section">
+                    <div class="files-header">
+                        <h3>📁 Downloaded Files</h3>
+                        <div class="files-actions">
+                            <button id="refreshFilesBtn" class="btn-info">🔄 Refresh</button>
+                            <button id="clearFilesBtn" class="btn-secondary">🗑️ Clear All</button>
+                        </div>
+                    </div>
+                    <div id="filesList" class="files-list">
+                        <div class="no-files">No files downloaded yet</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Initialize Socket.IO
+        const socket = io();
+        
+        // DOM elements
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const clearBtn = document.getElementById('clearBtn');
+        const progressLog = document.getElementById('progressLog');
+        const statusDot = document.getElementById('statusDot');
+        const statusText = document.getElementById('statusText');
+        const totalDownloaded = document.getElementById('totalDownloaded');
+        const companiesProcessed = document.getElementById('companiesProcessed');
+        const successRate = document.getElementById('successRate');
+        const refreshFilesBtn = document.getElementById('refreshFilesBtn');
+        const clearFilesBtn = document.getElementById('clearFilesBtn');
+        const filesList = document.getElementById('filesList');
+        
+        // State variables
+        let isRunning = false;
+        let totalFiles = 0;
+        let totalCompanies = 0;
+        let successfulDownloads = 0;
+        
+        // Event listeners
+        startBtn.addEventListener('click', startScraping);
+        stopBtn.addEventListener('click', stopScraping);
+        clearBtn.addEventListener('click', clearLog);
+        refreshFilesBtn.addEventListener('click', loadFiles);
+        clearFilesBtn.addEventListener('click', clearFiles);
+        
+        // Socket event handlers
+        socket.on('connect', () => {
+            addLogEntry('Connected to server', 'info');
+        });
+        
+        socket.on('progress', (data) => {
+            handleProgress(data);
+        });
+        
+        function startScraping() {
+            const companies = document.getElementById('companies').value;
+            const delay = document.getElementById('delay').value;
+            
+            const docTypes = {
+                concalls: document.getElementById('concalls').checked,
+                annual_reports: document.getElementById('annual_reports').checked,
+                transcripts: document.getElementById('transcripts').checked,
+                presentations: document.getElementById('presentations').checked
+            };
+            
+            if (!companies.trim()) {
+                alert('Please enter at least one company symbol');
+                return;
+            }
+            
+            fetch('/api/start-scraping', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    companies: companies,
+                    doc_types: docTypes,
+                    delay: delay
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    alert(data.error);
+                } else {
+                    setRunningState(true);
+                    addLogEntry('Scraping started...', 'info');
+                }
+            })
+            .catch(error => {
+                alert('Error starting scraping: ' + error);
+            });
+        }
+        
+        function stopScraping() {
+            fetch('/api/stop-scraping', {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(data => {
+                addLogEntry('Stopping scraping...', 'info');
+                setRunningState(false);
+            })
+            .catch(error => {
+                alert('Error stopping scraping: ' + error);
+            });
+        }
+        
+        function clearLog() {
+            progressLog.innerHTML = '';
+            totalDownloaded.textContent = '0';
+            companiesProcessed.textContent = '0';
+            successRate.textContent = '0%';
+            totalFiles = 0;
+            totalCompanies = 0;
+            successfulDownloads = 0;
+        }
+        
+        function loadFiles() {
+            fetch('/api/files')
+                .then(response => response.json())
+                .then(data => {
+                    displayFiles(data.files);
+                })
+                .catch(error => {
+                    console.error('Error loading files:', error);
+                    filesList.innerHTML = '<div class="no-files">Error loading files</div>';
+                });
+        }
+        
+        function displayFiles(files) {
+            if (!files || files.length === 0) {
+                filesList.innerHTML = '<div class="no-files">No files downloaded yet</div>';
+                return;
+            }
+            
+            const filesHtml = files.map(file => `
+                <div class="file-item">
+                    <div class="file-info">
+                        <div class="file-name">${escapeHtml(file.filename)}</div>
+                        <div class="file-meta">
+                            <span class="company-badge">${escapeHtml(file.company)}</span>
+                            ${formatFileSize(file.size)} • ${file.modified}
+                        </div>
+                    </div>
+                    <div class="file-actions">
+                        <a href="${file.download_url}" class="download-btn" download>
+                            📥 Download
+                        </a>
+                    </div>
+                </div>
+            `).join('');
+            
+            filesList.innerHTML = filesHtml;
+        }
+        
+        function formatFileSize(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        function clearFiles() {
+            if (confirm('Are you sure you want to delete all downloaded files?')) {
+                fetch('/api/files/clear', { method: 'POST' })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.error) {
+                            alert('Error: ' + data.error);
+                        } else {
+                            alert('All files cleared successfully');
+                            loadFiles();
+                            // Reset counters
+                            totalDownloaded.textContent = '0';
+                            companiesProcessed.textContent = '0';
+                            successRate.textContent = '0%';
+                        }
+                    })
+                    .catch(error => {
+                        alert('Error clearing files: ' + error);
+                    });
+            }
+        }
+        
+        function handleProgress(data) {
+            const { type, message } = data;
+            
+            addLogEntry(message, type);
+            
+            if (type === 'success' && message.includes('Downloaded:')) {
+                successfulDownloads++;
+                totalFiles++;
+                totalDownloaded.textContent = successfulDownloads;
+                // Refresh file list when a file is downloaded
+                setTimeout(loadFiles, 500);
+            } else if (type === 'error' && message.includes('Failed to download:')) {
+                totalFiles++;
+            } else if (type === 'info' && message.includes('files downloaded')) {
+                totalCompanies++;
+                companiesProcessed.textContent = totalCompanies;
+            } else if (type === 'complete') {
+                setRunningState(false);
+                // Final refresh of file list
+                setTimeout(loadFiles, 1000);
+            }
+            
+            // Update success rate
+            if (totalFiles > 0) {
+                const rate = Math.round((successfulDownloads / totalFiles) * 100);
+                successRate.textContent = rate + '%';
+            }
+        }
+        
+        function addLogEntry(message, type = 'info') {
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            progressLog.appendChild(entry);
+            progressLog.scrollTop = progressLog.scrollHeight;
+        }
+        
+        function setRunningState(running) {
+            isRunning = running;
+            
+            if (running) {
+                startBtn.classList.add('hidden');
+                stopBtn.classList.remove('hidden');
+                statusDot.classList.add('running');
+                statusText.textContent = 'Running';
+            } else {
+                startBtn.classList.remove('hidden');
+                stopBtn.classList.add('hidden');
+                statusDot.classList.remove('running');
+                statusText.textContent = 'Ready';
+            }
+        }
+        
+        // Check status on page load
+        fetch('/api/status')
+            .then(response => response.json())
+            .then(data => {
+                if (data.is_running) {
+                    setRunningState(true);
+                }
+                totalDownloaded.textContent = data.total_downloaded || 0;
+            })
+            .catch(error => {
+                console.error('Error checking status:', error);
+            });
+    </script>
+</body>
+</html>
