@@ -12,6 +12,10 @@ import os
 import json
 from datetime import datetime
 import time
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
 
 # Import our scraper
 try:
@@ -260,13 +264,23 @@ def stop_scraping():
     scraping_manager.stop_scraping()
     return jsonify({'message': 'Scraping stopped'})
 
+@app.route('/health')
+def health_check():
+    """Health check endpoint for Railway"""
+    return jsonify({
+        'status': 'healthy',
+        'message': 'Stock Scraper is running',
+        'download_folder': os.path.exists(download_folder)
+    })
+
 @app.route('/api/status')
 def get_status():
     """Get current scraping status"""
     return jsonify({
         'is_running': scraping_manager.is_running,
         'total_downloaded': scraping_manager.total_downloaded,
-        'download_folder': download_folder
+        'download_folder': download_folder,
+        'status': 'ready'
     })
 
 @app.route('/downloads/<path:filename>')
@@ -331,6 +345,26 @@ def handle_disconnect():
     """Handle client disconnection"""
     print('Client disconnected')
 
+def initialize_app():
+    """Initialize app"""
+    logging.info("Initializing Stock Scraper...")
+    os.makedirs(download_folder, exist_ok=True)
+    logging.info(f"Download folder created: {download_folder}")
+
+# Initialize app immediately
+initialize_app()
+
+@app.errorhandler(500)
+def internal_error(error):
+    """Handle internal server errors"""
+    logging.error(f"Internal server error: {error}")
+    return jsonify({'error': 'Internal server error'}), 500
+
+@app.errorhandler(404)
+def not_found(error):
+    """Handle 404 errors"""
+    return jsonify({'error': 'Not found'}), 404
+
 if __name__ == '__main__':
     # Create downloads directory
     os.makedirs(download_folder, exist_ok=True)
@@ -338,6 +372,16 @@ if __name__ == '__main__':
     # Get port from environment variable (Railway sets this)
     port = int(os.environ.get('PORT', 5000))
     
-    # Run the Flask app
-    # Use debug=False for production
-    socketio.run(app, debug=False, host='0.0.0.0', port=port)
+    # For production, we need to bind to all interfaces (0.0.0.0)
+    # and ensure the app starts properly
+    print(f"Starting Flask app on port {port}")
+    
+    # Use eventlet for production
+    socketio.run(
+        app, 
+        debug=False, 
+        host='0.0.0.0', 
+        port=port,
+        use_reloader=False,
+        log_output=True
+    )
