@@ -122,7 +122,7 @@ Then open: `http://localhost:5000`
 ## Screenshots
 
 ### Web Interface
-![Web Interface](https://raw.githubusercontent.com/pulkitv/stock-scraper/main/screenshot-web.png)
+![Web Interface](screenshot-web.png)
 
 ### Desktop GUI
-![Desktop GUI](https://raw.githubusercontent.com/pulkitv/stock-scraper/main/screenshot-gui.png)
+![Desktop GUI](screenshot-gui.png)
