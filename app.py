@@ -366,22 +366,14 @@ def not_found(error):
     return jsonify({'error': 'Not found'}), 404
 
 if __name__ == '__main__':
-    # Create downloads directory
+    # For local development only
+    port = int(os.environ.get('PORT', 5000))
     os.makedirs(download_folder, exist_ok=True)
     
-    # Get port from environment variable (Railway sets this)
-    port = int(os.environ.get('PORT', 5000))
-    
-    # For production, we need to bind to all interfaces (0.0.0.0)
-    # and ensure the app starts properly
-    print(f"Starting Flask app on port {port}")
-    
-    # Use eventlet for production
     socketio.run(
-        app, 
-        debug=False, 
-        host='0.0.0.0', 
+        app,
+        debug=True,  # Only for local development
+        host='0.0.0.0',
         port=port,
-        use_reloader=False,
-        log_output=True
+        allow_unsafe_werkzeug=True
     )

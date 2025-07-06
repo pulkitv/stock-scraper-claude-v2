@@ -21,7 +21,7 @@ if __name__ == '__main__':
             host='0.0.0.0',
             port=port,
             use_reloader=False,
-            log_output=True
+            allow_unsafe_werkzeug=True  # This fixes the production warning
         )
     except Exception as e:
         print(f"❌ Error starting app: {e}")
