@@ -366,13 +366,15 @@ def not_found(error):
     return jsonify({'error': 'Not found'}), 404
 
 if __name__ == '__main__':
-    # For local development only
+    # This block only runs when app.py is executed directly
+    # NOT when imported by gunicorn
     port = int(os.environ.get('PORT', 5000))
     os.makedirs(download_folder, exist_ok=True)
     
+    print(f"🚀 Starting Stock Scraper locally on port {port}")
     socketio.run(
         app,
-        debug=True,  # Only for local development
+        debug=True,
         host='0.0.0.0',
         port=port,
         allow_unsafe_werkzeug=True

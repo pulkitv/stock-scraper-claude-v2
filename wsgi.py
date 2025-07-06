@@ -1,27 +1,17 @@
-#!/usr/bin/env python3
+"""
+WSGI entry point for production deployment
+"""
 import os
 from app import app, socketio
 
-if __name__ == "__main__":
-    # Get port from environment
-    port = int(os.environ.get('PORT', 5000))
-    
-    # Create downloads directory
-    download_folder = os.path.join(os.getcwd(), 'downloads')
-    os.makedirs(download_folder, exist_ok=True)
-    
-    print(f"🚀 Starting Stock Scraper on port {port}")
-    print(f"📁 Download folder: {download_folder}")
-    
-    # Use eventlet for production
-    socketio.run(
-        app,
-        debug=False,
-        host='0.0.0.0',
-        port=port,
-        use_reloader=False,
-        allow_unsafe_werkzeug=True  # This fixes the Werkzeug error
-    )
+# Create downloads directory
+download_folder = os.path.join(os.getcwd(), 'downloads')
+os.makedirs(download_folder, exist_ok=True)
 
-# For gunicorn
+# This is what gunicorn will use
 application = app
+
+if __name__ == "__main__":
+    # Fallback for direct execution
+    port = int(os.environ.get('PORT', 5000))
+    socketio.run(app, host='0.0.0.0', port=port, allow_unsafe_werkzeug=True)
