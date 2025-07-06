@@ -95,10 +95,34 @@ MIT License
 ## Contributing
 Pull requests are welcome. For major changes, please open an issue first.
 
+## Deployment
+
+### Railway (Recommended)
+1. Fork/clone this repository
+2. Go to [railway.app](https://railway.app)
+3. Sign up with GitHub
+4. Click "New Project" → "Deploy from GitHub repo"
+5. Select your `stock-scraper` repository
+6. Railway will automatically detect and deploy your app
+7. Your app will be live at: `https://your-app-name.railway.app`
+
+### Local Development
+```bash
+python app.py
+```
+Then open: `http://localhost:5000`
+
+### Environment Variables
+- `PORT` - Port number (automatically set by Railway)
+- `DEBUG` - Set to `False` for production (optional)
+
+## Live Demo
+🚀 **[Try the live demo](https://your-app-name.railway.app)**
+
 ## Screenshots
 
 ### Web Interface
-![Web Interface](screenshot-web.png)
+![Web Interface](https://raw.githubusercontent.com/pulkitv/stock-scraper/main/screenshot-web.png)
 
 ### Desktop GUI
-![Desktop GUI](screenshot-gui.png)
+![Desktop GUI](https://raw.githubusercontent.com/pulkitv/stock-scraper/main/screenshot-gui.png)

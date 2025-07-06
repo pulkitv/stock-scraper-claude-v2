@@ -335,5 +335,9 @@ if __name__ == '__main__':
     # Create downloads directory
     os.makedirs(download_folder, exist_ok=True)
     
+    # Get port from environment variable (Railway sets this)
+    port = int(os.environ.get('PORT', 5000))
+    
     # Run the Flask app
-    socketio.run(app, debug=True, host='0.0.0.0', port=5000)
+    # Use debug=False for production
+    socketio.run(app, debug=False, host='0.0.0.0', port=port)

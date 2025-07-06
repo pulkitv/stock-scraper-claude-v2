@@ -6,3 +6,4 @@ lxml>=4.6.3
 flask==2.3.3
 flask-socketio==5.3.6
 eventlet==0.33.3
+gunicorn==21.2.0
