@@ -496,6 +496,12 @@
             handleProgress(data);
         });
         
+        // NEW: Handle dedicated stats updates
+        socket.on('stats_update', (data) => {
+            console.log('Stats update received:', data);
+            updateStats(data);
+        });
+        
         function startScraping() {
             const companies = document.getElementById('companies').value;
             const delay = document.getElementById('delay').value;
@@ -511,6 +517,11 @@
                 alert('Please enter at least one company symbol');
                 return;
             }
+            
+            // Reset counters when starting new scraping
+            successfulDownloads = 0;
+            totalFiles = 0;
+            totalCompanies = 0;
             
             fetch('/api/start-scraping', {
                 method: 'POST',
@@ -633,32 +644,45 @@
             }
         }
         
+        // NEW: Separate function to update stats
+        function updateStats(data) {
+            console.log('Updating stats with:', data);
+            
+            // Update the UI elements
+            totalDownloaded.textContent = data.total_downloaded || 0;
+            companiesProcessed.textContent = data.companies_processed || 0;
+            successRate.textContent = (data.success_rate || 0) + '%';
+            
+            // Update internal counters
+            successfulDownloads = data.total_downloaded || 0;
+            totalCompanies = data.companies_processed || 0;
+            
+            // If scraping is complete, update UI state
+            if (data.is_complete) {
+                setRunningState(false);
+                // Final refresh of file list
+                setTimeout(loadFiles, 1000);
+            }
+        }
+        
         function handleProgress(data) {
             const { type, message } = data;
             
             addLogEntry(message, type);
             
-            if (type === 'success' && message.includes('Downloaded:')) {
-                successfulDownloads++;
-                totalFiles++;
-                totalDownloaded.textContent = successfulDownloads;
+            // Handle stats if they're included in the progress event
+            if (data.stats) {
+                updateStats(data.stats);
+            }
+            
+            // Legacy handling for specific message patterns (backup)
+            if (type === 'success' && message.includes('Downloaded')) {
                 // Refresh file list when a file is downloaded
                 setTimeout(loadFiles, 500);
-            } else if (type === 'error' && message.includes('Failed to download:')) {
-                totalFiles++;
-            } else if (type === 'info' && message.includes('files downloaded')) {
-                totalCompanies++;
-                companiesProcessed.textContent = totalCompanies;
             } else if (type === 'complete') {
                 setRunningState(false);
                 // Final refresh of file list
                 setTimeout(loadFiles, 1000);
-            }
-            
-            // Update success rate
-            if (totalFiles > 0) {
-                const rate = Math.round((successfulDownloads / totalFiles) * 100);
-                successRate.textContent = rate + '%';
             }
         }
         
@@ -698,6 +722,9 @@
             .catch(error => {
                 console.error('Error checking status:', error);
             });
+        
+        // Load files on page load
+        loadFiles();
     </script>
 </body>
 </html>

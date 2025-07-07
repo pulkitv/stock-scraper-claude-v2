@@ -83,10 +83,18 @@ class EnhancedScreenerGUI:
         self.progress_queue = queue.Queue()
         self.download_folder = str(Path.home() / "Downloads" / "ScreenerData")
         
+        # Initialize stats variables
+        self.stats_vars = {
+            'files_downloaded': tk.StringVar(value='0'),
+            'companies_processed': tk.StringVar(value='0'),
+            'success_rate': tk.StringVar(value='0%')
+        }
+        
         # Create download folder if it doesn't exist
         os.makedirs(self.download_folder, exist_ok=True)
         
         self.setup_ui()
+    
         self.setup_menu()
         
         # Start checking for progress updates
@@ -229,6 +237,30 @@ class EnhancedScreenerGUI:
         self.extract_quarters = tk.BooleanVar(value=True)
         ttk.Checkbutton(date_frame, text="Extract quarter information (Q1, Q2, etc.)", 
                        variable=self.extract_quarters).grid(row=0, column=1, sticky=tk.W, padx=(20, 0))
+         
+            # Add stats section before the control buttons
+        stats_frame = ttk.LabelFrame(main_frame, text="Statistics", padding="10")
+        stats_frame.grid(row=7, column=0, columnspan=3, sticky=tk.W + tk.E, pady=(0, 15))
+
+        # Stats display
+        self.stats_vars = {
+            'files_downloaded': tk.StringVar(value="0"),
+            'companies_processed': tk.StringVar(value="0"),
+            'success_rate': tk.StringVar(value="0%")
+        }
+        
+        ttk.Label(stats_frame, text="Files Downloaded:").grid(row=0, column=0, sticky=tk.W, padx=(0, 10))
+        ttk.Label(stats_frame, textvariable=self.stats_vars['files_downloaded'], 
+                font=('Arial', 10, 'bold')).grid(row=0, column=1, sticky=tk.W)
+        
+        ttk.Label(stats_frame, text="Companies Processed:").grid(row=0, column=2, sticky=tk.W, padx=(20, 10))
+        ttk.Label(stats_frame, textvariable=self.stats_vars['companies_processed'], 
+                font=('Arial', 10, 'bold')).grid(row=0, column=3, sticky=tk.W)
+        
+        ttk.Label(stats_frame, text="Success Rate:").grid(row=1, column=0, sticky=tk.W, padx=(0, 10))
+        ttk.Label(stats_frame, textvariable=self.stats_vars['success_rate'], 
+                font=('Arial', 10, 'bold')).grid(row=1, column=1, sticky=tk.W)
+
         
         # Control buttons - Make sure this section is visible
         button_frame = ttk.Frame(main_frame)
@@ -353,7 +385,7 @@ class EnhancedScreenerGUI:
                 self.preview_text.insert(tk.END, f"Found {len(company_data.concalls)} documents:\n\n")
                 
                 for i, doc in enumerate(company_data.concalls[:10]):  # Show first 10
-                    filename = scraper.generate_filename(company, doc, i)
+                    filename = self.generate_filename(company, doc, i)
                     date_info = doc.date or "No date extracted"
                     
                     self.preview_text.insert(tk.END, f"📄 {filename}\n")
@@ -404,7 +436,8 @@ class EnhancedScreenerGUI:
         self.stop_button.config(state='disabled')
         self.progress_bar.stop()
         self.progress_var.set("Stopping...")
-    
+
+    # Update the enhanced_scraping_worker method to update stats
     def enhanced_scraping_worker(self, companies):
         """Enhanced worker thread for scraping with date extraction"""
         try:
@@ -417,7 +450,15 @@ class EnhancedScreenerGUI:
             
             total_companies = len(companies)
             results = {}
-            total_downloaded = 0  # Initialize the counter here
+            total_downloaded = 0
+            companies_processed = 0
+            
+            # Update initial stats
+            self.progress_queue.put(("stats", {
+                'files_downloaded': total_downloaded,
+                'companies_processed': companies_processed,
+                'success_rate': 0
+            }))
             
             for i, company in enumerate(companies, 1):
                 if not self.is_scraping:
@@ -432,6 +473,7 @@ class EnhancedScreenerGUI:
                     company_url = scraper.find_company_by_symbol(company)
                     if not company_url:
                         self.progress_queue.put(("result", f"❌ Could not find company page for {company}"))
+                        companies_processed += 1
                         continue
                     
                     self.progress_queue.put(("result", f"✅ Found: {company_url}"))
@@ -440,6 +482,7 @@ class EnhancedScreenerGUI:
                     company_data = scraper.extract_concall_data(company_url)
                     if not company_data:
                         self.progress_queue.put(("result", f"❌ Could not extract data for {company}"))
+                        companies_processed += 1
                         continue
                     
                     results[company] = company_data
@@ -447,57 +490,42 @@ class EnhancedScreenerGUI:
                     self.progress_queue.put(("result", f"🏭 Company: {company_data.company_name}"))
                     self.progress_queue.put(("result", f"📊 Found {len(company_data.concalls)} documents"))
                     
-                    # Download concall documents
+                    # Download documents
+                    download_dir = os.path.join(self.download_folder, company)
+                    downloaded_count = 0
+                    
                     concalls = company_data.concalls if company_data.concalls is not None else []
                     annual_reports = company_data.annual_reports if company_data.annual_reports is not None else []
                     
-                    self.progress_queue.put(("result", f"📊 Found {len(concalls)} concall documents and {len(annual_reports)} annual reports"))
-                    
-                    # Show date extraction results
-                    if concalls:
-                        dated_docs = [d for d in concalls if hasattr(d, 'date') and d.date]
-                        self.progress_queue.put(("result", f"📅 Date extracted for {len(dated_docs)}/{len(concalls)} concall documents"))
-                    
-                    if annual_reports:
-                        dated_reports = [d for d in annual_reports if d.get('date')]
-                        self.progress_queue.put(("result", f"📅 Date extracted for {len(dated_reports)}/{len(annual_reports)} annual reports"))
-                    
-                    # Download documents with enhanced naming
-                    download_dir = os.path.join(self.download_folder, company)
-                    downloaded_count = 0
-                    max_downloads = 8  # 5 concalls + 3 annual reports
-                    
                     # Download concall documents
-                    for j, concall in enumerate(concalls):
-                        if not self.is_scraping or downloaded_count >= max_downloads:
+                    for j, concall in enumerate(concalls[:5]):  # Limit to 5 concalls
+                        if not self.is_scraping:
                             break
                         
-                        doc_type = concall.doc_type.lower()
+                        filename = self.generate_filename(company, concall, j + 1)
+                        self.progress_queue.put(("progress", f"📥 Downloading: {filename}"))
                         
-                        # Check if this document type should be downloaded
-                        if ((doc_type == 'transcript' and self.doc_types['transcripts'].get()) or
-                            (doc_type == 'presentation' and self.doc_types['presentations'].get()) or
-                            (doc_type == 'concall' and self.doc_types['notes'].get()) or
-                            self.doc_types['other_docs'].get()):
+                        if scraper.download_document(concall.url, filename, download_dir):
+                            downloaded_count += 1
+                            total_downloaded += 1
+                            self.progress_queue.put(("result", f"✅ Downloaded: {filename}"))
                             
-                            filename = scraper.generate_filename(company, concall, j + 1)  # Start from 1
-                            
-                            self.progress_queue.put(("progress", f"📥 Downloading concall: {filename}"))
-                            
-                            if scraper.download_document(concall.url, filename, download_dir):
-                                downloaded_count += 1
-                                total_downloaded += 1  # Add this line
-                                self.progress_queue.put(("result", f"✅ Downloaded concall: {filename}"))
-                            else:
-                                self.progress_queue.put(("result", f"❌ Failed to download: {filename}"))
+                            # Update stats after each download
+                            success_rate = round((total_downloaded / max(1, i * 8)) * 100, 1)
+                            self.progress_queue.put(("stats", {
+                                'files_downloaded': total_downloaded,
+                                'companies_processed': companies_processed,
+                                'success_rate': success_rate
+                            }))
+                        else:
+                            self.progress_queue.put(("result", f"❌ Failed to download: {filename}"))
                     
                     # Download annual reports
-                    for j, report in enumerate(annual_reports):
-                        if not self.is_scraping or downloaded_count >= max_downloads:
+                    for j, report in enumerate(annual_reports[:3]):  # Limit to 3 annual reports
+                        if not self.is_scraping:
                             break
                         
                         if self.doc_types['annual_reports'].get():
-                            # Create a simple object with required attributes
                             class SimpleDoc:
                                 def __init__(self, **kwargs):
                                     for key, value in kwargs.items():
@@ -507,59 +535,62 @@ class EnhancedScreenerGUI:
                                 title=report.get('title', f'Annual Report {j+1}'),
                                 url=report['url'],
                                 doc_type='annual_report',
-                                date=report.get('date', f'annual-report-{j+1}'),  # Different naming
-                                parsed_date=report.get('parsed_date'),
-                                quarter=report.get('quarter'),
-                                year=report.get('year')
+                                date=report.get('date', f'annual-report-{j+1}')
                             )
                             
-                            filename = scraper.generate_filename(company, temp_doc, j + 100)  # Start from 100 to avoid collision
-                            
-                            self.progress_queue.put(("progress", f"📥 Downloading annual report: {filename}"))
+                            filename = self.generate_filename(company, temp_doc, j + 100)
+                            self.progress_queue.put(("progress", f"📥 Downloading: {filename}"))
                             
                             if scraper.download_document(report['url'], filename, download_dir):
                                 downloaded_count += 1
-                                total_downloaded += 1  # Add this line
-                                self.progress_queue.put(("result", f"✅ Downloaded annual report: {filename}"))
+                                total_downloaded += 1
+                                self.progress_queue.put(("result", f"✅ Downloaded: {filename}"))
+                                
+                                # Update stats after each download
+                                success_rate = round((total_downloaded / max(1, i * 8)) * 100, 1)
+                                self.progress_queue.put(("stats", {
+                                    'files_downloaded': total_downloaded,
+                                    'companies_processed': companies_processed,
+                                    'success_rate': success_rate
+                                }))
                             else:
                                 self.progress_queue.put(("result", f"❌ Failed to download: {filename}"))
                     
-                    self.progress_queue.put(("result", f"📊 Downloaded {downloaded_count} files total for {company}"))
+                    companies_processed += 1
+                    self.progress_queue.put(("result", f"📊 Downloaded {downloaded_count} files for {company}"))
                     
-                    self.progress_queue.put(("result", f"✅ {company} Summary: {downloaded_count} files downloaded"))
+                    # Update stats after each company
+                    success_rate = round((total_downloaded / max(1, companies_processed * 8)) * 100, 1)
+                    self.progress_queue.put(("stats", {
+                        'files_downloaded': total_downloaded,
+                        'companies_processed': companies_processed,
+                        'success_rate': success_rate
+                    }))
                     
                 except Exception as e:
                     self.progress_queue.put(("result", f"❌ Error processing {company}: {str(e)}"))
+                    companies_processed += 1
             
-            # Save enhanced results summary
-            if results:
-                summary_file = os.path.join(self.download_folder, "enhanced_scraping_summary.json")
-                summary_data = {}
-                for symbol, company_data in results.items():
-                    concalls = company_data.concalls if company_data.concalls is not None else []
-                    dated_docs = [d for d in concalls if hasattr(d, 'date') and d.date]
-                    summary_data[symbol] = {
-                        'documents_with_dates': len(dated_docs),
-                        'total_documents': len(concalls),
-                        'date_extraction_rate': f"{len(dated_docs)/len(concalls)*100:.1f}%" if concalls else "0%",
-                        'scraper_version': '2.0_enhanced'
-                    }
-                
-                with open(summary_file, 'w') as f:
-                    json.dump(summary_data, f, indent=2)
-                
-                self.progress_queue.put(("result", f"\n📊 FINAL SUMMARY"))
-                self.progress_queue.put(("result", f"Companies processed: {len(results)}"))
-                self.progress_queue.put(("result", f"Total files downloaded: {total_downloaded}"))
-                self.progress_queue.put(("result", f"Summary saved: {summary_file}"))
+            # Final stats update
+            final_success_rate = round((total_downloaded / max(1, companies_processed * 8)) * 100, 1)
+            self.progress_queue.put(("stats", {
+                'files_downloaded': total_downloaded,
+                'companies_processed': companies_processed,
+                'success_rate': final_success_rate
+            }))
             
             self.progress_queue.put(("status", f"✅ Enhanced scraping completed! Downloaded {total_downloaded} files"))
+            self.progress_queue.put(("result", f"\n📊 FINAL SUMMARY"))
+            self.progress_queue.put(("result", f"Companies processed: {companies_processed}"))
+            self.progress_queue.put(("result", f"Total files downloaded: {total_downloaded}"))
+            self.progress_queue.put(("result", f"Success rate: {final_success_rate}%"))
             
         except Exception as e:
             self.progress_queue.put(("result", f"❌ Unexpected error: {str(e)}"))
         finally:
             self.progress_queue.put(("done", None))
-    
+
+    # Update the check_progress_queue method to handle stats
     def check_progress_queue(self):
         """Check for progress updates from worker thread"""
         try:
@@ -571,6 +602,11 @@ class EnhancedScreenerGUI:
                 elif msg_type == "result":
                     self.results_text.insert(tk.END, data + "\n")
                     self.results_text.see(tk.END)
+                elif msg_type == "stats":
+                    # Update stats display
+                    self.stats_vars['files_downloaded'].set(str(data['files_downloaded']))
+                    self.stats_vars['companies_processed'].set(str(data['companies_processed']))
+                    self.stats_vars['success_rate'].set(f"{data['success_rate']}%")
                 elif msg_type == "done":
                     self.start_button.config(state='normal')
                     self.stop_button.config(state='disabled')
@@ -583,7 +619,7 @@ class EnhancedScreenerGUI:
         
         # Schedule next check
         self.root.after(100, self.check_progress_queue)
-    
+
     def clear_results(self):
         """Clear the results area"""
         self.results_text.delete(1.0, tk.END)
@@ -610,6 +646,12 @@ class EnhancedScreenerGUI:
                 messagebox.showinfo("Success", f"Results exported to {filename}")
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to export: {str(e)}")
+    
+    def generate_filename(self, company, doc, index):
+        """Generate filename for document"""
+        doc_type = getattr(doc, 'doc_type', 'document')
+        date_info = getattr(doc, 'date', f'doc-{index+1}')
+        return f"{company}_{date_info}_{doc_type}.pdf"
     
     def show_sample_filenames(self):
         """Show sample filename patterns"""

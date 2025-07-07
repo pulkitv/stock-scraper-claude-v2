@@ -144,165 +144,178 @@ class EnhancedScreenerScraper:
         concalls = []
         annual_reports = []
         
-        # Get all links from the page
-        all_links = soup.find_all('a', href=True)
+        # FIND THE SPECIFIC ANNUAL REPORTS SECTION
+        print(f"🔍 Looking for dedicated annual reports section...")
         
-        # Define annual report patterns
-        annual_patterns = [
-            'financial year',
-            'fy 20',
-            'fy20',
-            'annual report',
-            'year ended',
-            'financial year 20',
-            'financial year 19',
-            'financial year 18'
-        ]
+        # Look for the specific annual reports section
+        annual_reports_section = soup.find('div', class_='documents annual-reports')
+        if not annual_reports_section:
+            # Try alternative selectors
+            annual_reports_section = soup.find('div', {'class': lambda x: bool(x and 'annual-reports' in x)})
         
-        # Process all links
-        for link in all_links:
-            if not isinstance(link, Tag):
-                continue
+        if annual_reports_section and isinstance(annual_reports_section, Tag):
+            print(f"✅ Found dedicated annual reports section!")
             
-            href = link.get('href')
-            if not href:
-                continue
+            # Find all links within this section
+            annual_links = annual_reports_section.find_all('a', href=True)
             
-            text = link.get_text(strip=True)
-            
-            # Skip very short or empty links
-            if len(text) < 5:
-                continue
-            
-            text_lower = text.lower()
-            
-            # Check for annual reports first - make it more specific
-            is_annual_report = False
-            
-            # Only consider links that are specifically annual reports
-            annual_report_indicators = [
-                'annual report',
-                'yearly report',
-                'annual accounts',
-                'financial statements',
-                'audited financial results'
-            ]
-            
-            financial_year_indicators = [
-                'financial year 20',
-                'fy 20',
-                'fy20'
-            ]
-            
-            # Check for explicit annual report mentions
-            for indicator in annual_report_indicators:
-                if indicator in text_lower:
-                    is_annual_report = True
-                    break
-            
-            # Check for Financial Year mentions ONLY if they seem like annual reports
-            if not is_annual_report:
-                for indicator in financial_year_indicators:
-                    if indicator in text_lower:
-                        # Additional validation - make sure it's not an announcement
-                        if not any(exclude in text_lower for exclude in [
-                            'announcement', 'regulation 30', 'lodr', 'credit rating', 
-                            'rating', 'disclosure', 'intimation', 'notice', 'compliance',
-                            'outcome', 'result', 'meeting', 'board', 'esg', 'crisil'
-                        ]):
-                            # Additional check - should contain report-like words
-                            if any(report_word in text_lower for report_word in [
-                                'report', 'statement', 'accounts', 'financial', 'audit'
-                            ]):
-                                is_annual_report = True
-                                break
-
-            if is_annual_report:
-                # Better year extraction patterns
-                year = None
+            for link in annual_links:
+                if not isinstance(link, Tag):
+                    continue
+                    
+                href = link.get('href')
+                if not href:
+                    continue
+                    
+                text = link.get_text(strip=True)
                 
-                # Try different year patterns
-                patterns = [
-                    r'financial year\s*(\d{4})',        # "Financial Year 2023"
-                    r'fy\s*(\d{4})',                    # "FY 2023"
-                    r'fy(\d{4})',                       # "FY2023"
-                    r'year\s*(\d{4})',                  # "Year 2023"
-                    r'(\d{4})\s*financial year',        # "2023 Financial Year"
-                    r'(\d{4})\s*fy',                    # "2023 FY"
-                    r'\b(20\d{2})\b',                   # Any 4-digit year starting with 20
-                    r'(\d{2})\s*financial year',        # "23 Financial Year" (convert to 2023)
-                    r'fy\s*(\d{2})\b',                  # "FY 23" (convert to 2023)
-                ]
+                # Skip empty links
+                if len(text) < 5:
+                    continue
                 
-                for pattern in patterns:
-                    match = re.search(pattern, text.lower())
-                    if match:
-                        year_str = match.group(1)
-                        if len(year_str) == 2:  # Convert 2-digit year to 4-digit
-                            year_int = int(year_str)
-                            if year_int >= 90:  # 90-99 = 1990-1999
-                                year = 1900 + year_int
-                            else:  # 00-89 = 2000-2089
-                                year = 2000 + year_int
+                # Check if it's an annual report link (BSE/NSE URLs)
+                if any(domain in str(href) for domain in ['bseindia.com', 'nseindia.com', 'archives.nseindia.com']):
+                    print(f"🔍 Found annual report link: {text}")
+                    print(f"🔗 URL: {href}")
+                    
+                    # Extract year from text
+                    year = None
+                    text_lower = text.lower()
+                    
+                    # Enhanced year extraction for "Financial Year YYYY" pattern
+                    patterns = [
+                        r'financial year\s+(\d{4})',     # "Financial Year 2024"
+                        r'fy\s+(\d{4})',                 # "FY 2024"
+                        r'year\s+(\d{4})',               # "Year 2024"
+                        r'\b(\d{4})\b',                  # Any 4-digit year
+                    ]
+                    
+                    for pattern in patterns:
+                        match = re.search(pattern, text_lower)
+                        if match:
+                            year = int(match.group(1))
+                            break
+                    
+                    print(f"📅 Extracted year: {year}")
+                    
+                    # Build full URL
+                    if str(href).startswith('http'):
+                        full_url = str(href)
+                    else:
+                        full_url = urljoin(self.base_url, str(href))
+                    
+                    # Add to annual reports
+                    annual_reports.append({
+                        'title': text,
+                        'url': full_url,
+                        'type': 'annual_report',
+                        'date': f"FY{year}" if year else "FY Unknown",
+                        'parsed_date': datetime(year, 3, 31) if year else datetime.min,
+                        'quarter': None,
+                        'year': year
+                    })
+        else:
+            print(f"❌ Could not find dedicated annual reports section")
+        
+        # FIND THE SPECIFIC CONCALLS SECTION
+        print(f"🔍 Looking for dedicated concalls section...")
+        
+        # Look for the specific concalls section
+        concalls_section = soup.find('div', class_='documents concalls')
+        if not concalls_section:
+            # Try alternative selectors
+            concalls_section = soup.find('div', {'class': lambda x: bool(x and 'concalls' in x)})
+        
+        if concalls_section and isinstance(concalls_section, Tag):
+            print(f"✅ Found dedicated concalls section!")
+            
+            # Find all list items within this section
+            concall_items = concalls_section.find_all('li')
+            
+            for item in concall_items:
+                if not isinstance(item, Tag):
+                    continue
+                
+                # Extract date from the date div
+                date_div = item.find('div', class_='ink-600')
+                if date_div:
+                    date_text = date_div.get_text(strip=True)
+                    print(f"📅 Found concall date: {date_text}")
+                    
+                    # Parse date (format: "Apr 2025", "Jan 2024", etc.)
+                    date_str, parsed_date, quarter, year = self.extract_date_from_text(date_text)
+                    
+                    # Find all concall links in this item
+                    concall_links = item.find_all('a', class_='concall-link')
+                    
+                    for link in concall_links:
+                        if not isinstance(link, Tag):
+                            continue
+                        
+                        href = link.get('href')
+                        if not href:
+                            continue
+                        
+                        text = link.get_text(strip=True)
+                        
+                        # Skip empty links and button elements
+                        if len(text) < 2:
+                            continue
+                        
+                        # Skip modal buttons (they don't have href starting with http)
+                        if not str(href).startswith('http') and not str(href).startswith('/'):
+                            continue
+                        
+                        # Determine document type based on text
+                        doc_type = 'concall'
+                        if text.lower() == 'transcript':
+                            doc_type = 'transcript'
+                        elif text.lower() == 'ppt':
+                            doc_type = 'presentation'
+                        elif text.lower() == 'rec':
+                            doc_type = 'recording'
+                        elif 'presentation' in text.lower():
+                            doc_type = 'presentation'
+                        elif 'transcript' in text.lower():
+                            doc_type = 'transcript'
+                        
+                        # Build full URL
+                        if str(href).startswith('http'):
+                            full_url = str(href)
                         else:
-                            year = int(year_str)
-                        break
-                
-                print(f"🔍 Found annual report: {text}")
-                print(f"🔗 Original href: {href}")
-                print(f"📅 Extracted year: {year}")
-                
-                # Build full URL
-                if str(href).startswith('http'):
-                    full_url = str(href)
-                else:
-                    full_url = urljoin(self.base_url, str(href))
-                
-                # Add to annual reports
-                annual_reports.append({
-                    'title': text,
-                    'url': full_url,
-                    'type': 'annual_report',
-                    'date': f"FY{year}" if year else "FY Unknown",
-                    'parsed_date': datetime(year, 3, 31) if year else datetime.min,
-                    'quarter': None,
-                    'year': year
-                })
-            
-            # Check for concall-related content
-            elif any(word in text_lower for word in ['concall', 'transcript', 'presentation', 'earnings call', 'investor call']):
-                # Extract date information
-                date_str, parsed_date, quarter, year = self.extract_date_from_text(text)
-                
-                doc_type = 'concall'
-                if 'transcript' in text_lower:
-                    doc_type = 'transcript'
-                elif 'presentation' in text_lower:
-                    doc_type = 'presentation'
-                elif 'earnings' in text_lower:
-                    doc_type = 'earnings_call'
-                
-                concalls.append(ConcallDocument(
-                    title=text,
-                    url=urljoin(self.base_url, str(href)),
-                    doc_type=doc_type,
-                    date=date_str,
-                    parsed_date=parsed_date,
-                    quarter=quarter,
-                    year=year
-                ))
-    
+                            full_url = urljoin(self.base_url, str(href))
+                        
+                        print(f"🔍 Found concall document: {text} ({doc_type})")
+                        print(f"🔗 URL: {full_url}")
+                        
+                        # Create concall document with the date from this section
+                        concalls.append(ConcallDocument(
+                            title=f"{date_text} - {text}",
+                            url=full_url,
+                            doc_type=doc_type,
+                            date=date_str or date_text,
+                            parsed_date=parsed_date,
+                            quarter=quarter,
+                            year=year
+                        ))
+        else:
+            print(f"❌ Could not find dedicated concalls section")
+
         # Sort and limit results
         concalls.sort(key=lambda x: x.parsed_date or datetime.min, reverse=True)
-        concalls = concalls[:5]
+        concalls = concalls[:20]  # Get 20 concalls to ensure we have enough quarters
         
-        # Sort annual reports by date and limit to 3 most recent
-        print(f"📊 Found {len(annual_reports)} total annual reports before sorting:")
+        # Sort annual reports by date (most recent first)
+        print(f"📊 Found {len(annual_reports)} annual reports from dedicated section:")
         for i, report in enumerate(annual_reports):
             print(f"  {i+1}. {report['title']} (Year: {report.get('year', 'Unknown')})")
         
         annual_reports.sort(key=lambda x: x.get('parsed_date') or datetime.min, reverse=True)
-        annual_reports = annual_reports[:5]  # Increased from 3 to 5
+        annual_reports = annual_reports[:5]  # Keep top 5 most recent
+        
+        print(f"📊 Found {len(concalls)} concall documents from dedicated section:")
+        for i, concall in enumerate(concalls):
+            print(f"  {i+1}. {concall.title} ({concall.doc_type})")
         
         print(f"📊 Keeping {len(annual_reports)} most recent annual reports:")
         for i, report in enumerate(annual_reports):
