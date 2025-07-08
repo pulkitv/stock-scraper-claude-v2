@@ -377,7 +377,7 @@ class EnhancedScreenerScraper:
         return f"{company_clean}_{date_part}_{doc_type}.{ext}"
     
     def download_document(self, url: str, filename: str, download_dir: str) -> bool:
-        """Download document from URL with enhanced BSE handling"""
+        """Download document from URL with BSE URL conversion"""
         try:
             print(f"🔍 Attempting to download: {url}")
             print(f"📄 Filename: {filename}")
@@ -386,12 +386,18 @@ class EnhancedScreenerScraper:
             os.makedirs(download_dir, exist_ok=True)
             file_path = os.path.join(download_dir, filename)
             
-            # Handle BSE URLs with direct redirect approach
+            # Handle BSE URLs - convert to direct download format
             if 'bseindia.com' in url and 'AnnPdfOpen.aspx' in url:
-                print("🎯 BSE URL detected!")
-                return self._download_bse_document(url, file_path)
+                print("🎯 BSE URL detected - converting to direct download URL")
+                converted_url = self._convert_bse_url(url)
+                if converted_url:
+                    url = converted_url
+                    print(f"🔄 Converted to: {url}")
+                else:
+                    print("❌ Failed to convert BSE URL")
+                    return False
             
-            # Handle regular URLs
+            # Handle regular URLs (including converted BSE URLs)
             print("⏰ Making request to:", url)
             start_time = time.time()
             
@@ -410,7 +416,7 @@ class EnhancedScreenerScraper:
                         if chunk:
                             f.write(chunk)
                             downloaded += len(chunk)
-            
+        
                 print(f"✅ Downloaded: {filename} ({downloaded} bytes)")
                 time.sleep(self.delay)
                 return True
@@ -422,402 +428,37 @@ class EnhancedScreenerScraper:
             print(f"❌ Download error: {str(e)}")
             return False
 
-    def _download_bse_document(self, url: str, file_path: str) -> bool:
-        """Handle BSE document downloads with advanced bypass methods"""
+    def _convert_bse_url(self, url: str) -> Optional[str]:
+        """Convert BSE AnnPdfOpen.aspx URL to direct download URL"""
         try:
-            print("🔄 BSE URL detected, applying advanced bypass methods...")
-            
-            # Extract the Pname parameter from the URL
             from urllib.parse import parse_qs, urlparse
             
+            print(f"🔄 Converting BSE URL: {url}")
+            
+            # Parse the URL to extract parameters
             parsed_url = urlparse(url)
             query_params = parse_qs(parsed_url.query)
             
             if 'Pname' not in query_params:
                 print("❌ No Pname parameter found in BSE URL")
-                return False
+                return None
             
             pname = query_params['Pname'][0]
             print(f"📋 Extracted Pname: {pname}")
             
-            # Clean up the Pname (remove backslashes and other issues)
+            # Clean up the Pname (remove backslashes and URL encoding issues)
             clean_pname = pname.replace('\\', '').replace('%5C', '')
             print(f"🧹 Cleaned Pname: {clean_pname}")
             
-            # Method 1: Try browser automation approach
-            print("🤖 Trying browser automation method...")
-            if self._download_bse_with_selenium(url, clean_pname, file_path):
-                return True
+            # Construct the direct download URL
+            direct_url = f"https://www.bseindia.com/xml-data/corpfiling/AttachHis/{clean_pname}"
             
-            # Method 2: Try session-based approach with proper BSE flow
-            print("🔄 Trying session-based BSE flow...")
-            if self._download_bse_with_proper_session(url, clean_pname, file_path):
-                return True
-            
-            # Method 3: Try direct PDF construction with verification
-            print("🔄 Trying direct PDF verification...")
-            if self._download_bse_direct_verified(clean_pname, file_path):
-                return True
-            
-            # Method 4: Try with request intercepting
-            print("🔄 Trying request interception method...")
-            if self._download_bse_with_interception(url, clean_pname, file_path):
-                return True
-            
-            print("❌ All BSE download methods failed - BSE has strong anti-bot protection")
-            return False
+            print(f"✅ Converted BSE URL: {direct_url}")
+            return direct_url
             
         except Exception as e:
-            print(f"❌ BSE bypass error: {str(e)}")
-            return False
-
-    def _download_bse_with_selenium(self, url: str, clean_pname: str, file_path: str) -> bool:
-        """Try BSE download using Selenium browser automation"""
-        try:
-            # Try to import selenium
-            try:
-                from selenium import webdriver
-                from selenium.webdriver.chrome.options import Options
-                from selenium.webdriver.common.by import By
-                from selenium.webdriver.support.ui import WebDriverWait
-                from selenium.webdriver.support import expected_conditions as EC
-                import time
-            except ImportError:
-                print("⚠️ Selenium not installed, skipping browser automation method")
-                return False
-            
-            print("🤖 Starting browser automation...")
-            
-            # Setup Chrome options
-            chrome_options = Options()
-            chrome_options.add_argument('--headless')  # Run in background
-            chrome_options.add_argument('--no-sandbox')
-            chrome_options.add_argument('--disable-dev-shm-usage')
-            chrome_options.add_argument('--disable-gpu')
-            chrome_options.add_argument('--window-size=1920,1080')
-            chrome_options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36')
-            
-            # Set download preferences
-            download_dir = os.path.dirname(file_path)
-            prefs = {
-                "download.default_directory": download_dir,
-                "download.prompt_for_download": False,
-                "download.directory_upgrade": True,
-                "safebrowsing.enabled": True
-            }
-            chrome_options.add_experimental_option("prefs", prefs)
-            
-            try:
-                # Initialize Chrome driver
-                driver = webdriver.Chrome(options=chrome_options)
-                driver.set_page_load_timeout(30)
-                
-                print("🌐 Navigating to BSE page...")
-                driver.get(url)
-                
-                # Wait for page to load
-                time.sleep(5)
-                
-                # Check if we got redirected to the PDF
-                current_url = driver.current_url
-                print(f"📍 Current URL: {current_url}")
-                
-                if current_url.endswith('.pdf') or 'xml-data/corpfiling' in current_url:
-                    print("✅ Browser was redirected to PDF, downloading...")
-                    
-                    # Use requests to download the PDF from the redirected URL
-                    response = requests.get(current_url, stream=True, timeout=30)
-                    if response.status_code == 200:
-                        with open(file_path, 'wb') as f:
-                            downloaded = 0
-                            for chunk in response.iter_content(chunk_size=8192):
-                                if chunk:
-                                    f.write(chunk)
-                                    downloaded += len(chunk)
-                        
-                        if downloaded > 1000:
-                            print(f"✅ Selenium download successful: {os.path.basename(file_path)} ({downloaded} bytes)")
-                            driver.quit()
-                            return True
-                
-                # Try to find download links on the page
-                download_links = driver.find_elements(By.XPATH, "//a[contains(@href, '.pdf') or contains(text(), 'Download') or contains(text(), 'PDF')]")
-                
-                for link in download_links[:3]:  # Try first 3 links
-                    try:
-                        href = link.get_attribute('href')
-                        if href and '.pdf' in href:
-                            print(f"🔗 Found download link: {href}")
-                            
-                            response = requests.get(href, stream=True, timeout=30)
-                            if response.status_code == 200:
-                                with open(file_path, 'wb') as f:
-                                    downloaded = 0
-                                    for chunk in response.iter_content(chunk_size=8192):
-                                        if chunk:
-                                            f.write(chunk)
-                                            downloaded += len(chunk)
-                                
-                                if downloaded > 1000:
-                                    print(f"✅ Selenium link download successful: {os.path.basename(file_path)} ({downloaded} bytes)")
-                                    driver.quit()
-                                    return True
-                    except Exception as e:
-                        print(f"⚠️ Link attempt failed: {str(e)}")
-                        continue
-                
-                # Clean up driver and return False if no downloads succeeded
-                driver.quit()
-                return False
-            
-            except Exception as e:
-                print(f"❌ Selenium browser error: {str(e)}")
-                if 'driver' in locals():
-                    driver.quit()
-                return False
-            
-        except Exception as e:
-            print(f"❌ Selenium method failed: {str(e)}")
-            return False
-
-    def _download_bse_with_proper_session(self, url: str, clean_pname: str, file_path: str) -> bool:
-        """Try BSE download with proper session establishment"""
-        try:
-            print("🔄 Establishing proper BSE session...")
-            
-            # Create a new session that mimics browser behavior
-            bse_session = requests.Session()
-            
-            # Set comprehensive headers
-            bse_session.headers.update({
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-                'Accept-Language': 'en-US,en;q=0.9',
-                'Accept-Encoding': 'gzip, deflate, br',
-                'Connection': 'keep-alive',
-                'Upgrade-Insecure-Requests': '1',
-                'Sec-Fetch-Dest': 'document',
-                'Sec-Fetch-Mode': 'navigate',
-                'Sec-Fetch-Site': 'none',
-                'Cache-Control': 'max-age=0',
-                'sec-ch-ua': '"Not A(Brand";v="99", "Google Chrome";v="121", "Chromium";v="121"',
-                'sec-ch-ua-mobile': '?0',
-                'sec-ch-ua-platform': '"Windows"'
-            })
-            
-            # Step 1: Visit BSE homepage to establish session
-            print("🏠 Visiting BSE homepage...")
-            homepage_response = bse_session.get("https://www.bseindia.com", timeout=15)
-            if homepage_response.status_code != 200:
-                print(f"❌ Failed to load BSE homepage: {homepage_response.status_code}")
-                return False
-            
-            # Step 2: Visit a company page to get proper cookies
-            print("🏢 Visiting company section...")
-            company_response = bse_session.get("https://www.bseindia.com/stock-share-price/", timeout=15)
-            
-            # Step 3: Now try the annual report with proper referrer
-            print("📄 Attempting to access annual report...")
-            bse_session.headers.update({
-                'Referer': 'https://www.bseindia.com/stock-share-price/'
-            })
-            
-            # Try the original URL first
-            response = bse_session.get(url, allow_redirects=True, timeout=30)
-            print(f"📊 Response status: {response.status_code}")
-            print(f"📊 Final URL: {response.url}")
-            
-            if response.status_code == 200:
-                content_type = response.headers.get('content-type', '').lower()
-                
-                if 'application/pdf' in content_type:
-                    with open(file_path, 'wb') as f:
-                        downloaded = 0
-                        for chunk in response.iter_content(chunk_size=8192):
-                            if chunk:
-                                f.write(chunk)
-                                downloaded += len(chunk)
-                    
-                    if downloaded > 1000:
-                        print(f"✅ BSE session download successful: {os.path.basename(file_path)} ({downloaded} bytes)")
-                        return True
-            
-                # If we got HTML, try to find the actual PDF link
-                if 'text/html' in content_type:
-                    print("📄 Got HTML response, looking for PDF link...")
-                    from bs4 import BeautifulSoup
-                    soup = BeautifulSoup(response.content, 'html.parser')
-                    
-                    # Look for iframe or embed with PDF
-                    for element in soup.find_all(['iframe', 'embed'], src=True):
-                        if not isinstance(element, Tag):
-                            continue
-                            src = element.get('src')
-                        if src and clean_pname in str(src):
-                            print(f"🎯 Found PDF in iframe: {src}")
-                            
-                            if not str(src).startswith('http'):
-                                src = f"https://www.bseindia.com{str(src)}"
-                            
-                            pdf_response = bse_session.get(src, stream=True, timeout=30)
-                            if pdf_response.status_code == 200:
-                                with open(file_path, 'wb') as f:
-                                    downloaded = 0
-                                    for chunk in pdf_response.iter_content(chunk_size=8192):
-                                        if chunk:
-                                            f.write(chunk)
-                                            downloaded += len(chunk)
-                                
-                                if downloaded > 1000:
-                                    print(f"✅ BSE iframe download successful: {os.path.basename(file_path)} ({downloaded} bytes)")
-                                    return True
-            
-            return False
-            
-        except Exception as e:
-            print(f"❌ BSE session method failed: {str(e)}")
-            return False
-
-    def _download_bse_direct_verified(self, clean_pname: str, file_path: str) -> bool:
-        """Try direct BSE download with multiple verification attempts"""
-        try:
-            # Construct various possible direct URLs
-            direct_urls = [
-                f"https://www.bseindia.com/xml-data/corpfiling/AttachHis/{clean_pname}",
-                f"https://bseindia.com/xml-data/corpfiling/AttachHis/{clean_pname}",
-                f"https://www.bseindia.com/corpfiling/AttachHis/{clean_pname}",
-                f"https://www.bseindia.com/download/corpfiling/{clean_pname}",
-            ]
-            
-            for i, direct_url in enumerate(direct_urls, 1):
-                print(f"🔄 Direct attempt {i}: {direct_url}")
-                
-                try:
-                    # Create session with different characteristics for each attempt
-                    session = requests.Session()
-                    
-                    if i == 1:
-                        # Standard browser
-                        user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'
-                    elif i == 2:
-                        # Firefox
-                        user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0'
-                    elif i == 3:
-                        # Safari
-                        user_agent = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15'
-                    else:
-                        # Mobile
-                        user_agent = 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15'
-                    
-                    session.headers.update({
-                        'User-Agent': user_agent,
-                        'Accept': 'application/pdf,application/octet-stream,*/*',
-                        'Accept-Language': 'en-US,en;q=0.9',
-                        'Connection': 'keep-alive',
-                        'Cache-Control': 'no-cache'
-                    })
-                    
-                    # Add delay between attempts
-                    time.sleep(2)
-                    
-                    response = session.get(direct_url, stream=True, timeout=20)
-                    print(f"📊 Status: {response.status_code} | Content-Type: {response.headers.get('content-type', 'unknown')}")
-                    
-                    if response.status_code == 200:
-                        content_type = response.headers.get('content-type', '').lower()
-                        content_length = response.headers.get('content-length', '0')
-                        
-                        # Check if it looks like a valid PDF
-                        if ('application/pdf' in content_type or 
-                            response.url.endswith('.pdf') or 
-                            int(content_length) > 10000):
-                            
-                            with open(file_path, 'wb') as f:
-                                downloaded = 0
-                                for chunk in response.iter_content(chunk_size=8192):
-                                    if chunk:
-                                        f.write(chunk)
-                                        downloaded += len(chunk)
-                            
-                            # Verify the downloaded file
-                            if downloaded > 1000:
-                                # Quick check if it's actually a PDF
-                                with open(file_path, 'rb') as f:
-                                    header = f.read(4)
-                                    if header.startswith(b'%PDF'):
-                                        print(f"✅ Direct verified download successful: {os.path.basename(file_path)} ({downloaded} bytes)")
-                                        return True
-                                    else:
-                                        print(f"⚠️ Downloaded file is not a valid PDF")
-                                        os.remove(file_path) if os.path.exists(file_path) else None
-                
-                except Exception as e:
-                    print(f"⚠️ Direct attempt {i} failed: {str(e)}")
-                    continue
-            
-            return False
-        
-        except Exception as e:
-            print(f"❌ Direct verified method failed: {str(e)}")
-            return False
-
-    def _download_bse_with_interception(self, url: str, clean_pname: str, file_path: str) -> bool:
-        """Try BSE download by intercepting the actual request flow"""
-        try:
-            print("🕵️ Attempting request interception method...")
-            
-            # Method: Try to replicate the exact request flow that BSE expects
-            session = requests.Session()
-            
-            # Step 1: Get the page that contains the link
-            session.headers.update({
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.9',
-                'Accept-Encoding': 'gzip, deflate, br',
-                'Connection': 'keep-alive',
-                'Upgrade-Insecure-Requests': '1'
-            })
-            
-            # Try to find the company page that contains this annual report
-            symbol = 'INFY'  # Extract from context or pass as parameter
-            company_page = f"https://www.bseindia.com/stock-share-price/infosys-ltd/infy/500209/"
-            
-            print(f"🏢 Visiting company page: {company_page}")
-            company_response = session.get(company_page, timeout=15)
-            
-            if company_response.status_code == 200:
-                print("✅ Company page loaded successfully")
-                
-                # Update headers to include referrer
-                session.headers.update({
-                    'Referer': company_page
-                })
-                
-                # Now try the annual report URL
-                response = session.get(url, allow_redirects=True, stream=True, timeout=30)
-                print(f"📊 Annual report response: {response.status_code}")
-                
-                if response.status_code == 200:
-                    content_type = response.headers.get('content-type', '').lower()
-                    
-                    if 'application/pdf' in content_type:
-                        with open(file_path, 'wb') as f:
-                            downloaded = 0
-                            for chunk in response.iter_content(chunk_size=8192):
-                                if chunk:
-                                    f.write(chunk)
-                                    downloaded += len(chunk)
-                    
-                        if downloaded > 1000:
-                            print(f"✅ Interception download successful: {os.path.basename(file_path)} ({downloaded} bytes)")
-                            return True
-            
-            return False
-            
-        except Exception as e:
-            print(f"❌ Interception method failed: {str(e)}")
-            return False
+            print(f"❌ BSE URL conversion error: {str(e)}")
+            return None
     
     def scrape_company_data(self, symbol: str, download_docs=True):
         """Main scraping method"""
