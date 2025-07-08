@@ -5,9 +5,10 @@ Fixed version that works with the GUI
 """
 
 import requests
-from bs4 import BeautifulSoup, Tag
 import time
 import os
+from urllib.parse import parse_qs, urlparse
+from bs4 import BeautifulSoup, Tag
 import re
 from urllib.parse import urljoin
 from dataclasses import dataclass
@@ -376,194 +377,229 @@ class EnhancedScreenerScraper:
         return f"{company_clean}_{date_part}_{doc_type}.{ext}"
     
     def download_document(self, url: str, filename: str, download_dir: str) -> bool:
-        """Download a document from the given URL"""
+        """Download document from URL with enhanced BSE handling"""
         try:
             print(f"🔍 Attempting to download: {url}")
             print(f"📄 Filename: {filename}")
             
-            # Check if URL is valid
-            if not url or not url.startswith('http'):
-                print(f"❌ Invalid URL: {url}")
-                return False
-            
-            # Create directory if it doesn't exist
+            # Create download directory
             os.makedirs(download_dir, exist_ok=True)
+            file_path = os.path.join(download_dir, filename)
             
-            # Special handling for BSE URLs
-            if 'bseindia.com' in url:
-                print(f"🎯 BSE URL detected!")
-                
-                if 'AnnPdfOpen.aspx' in url:
-                    print(f"🔄 BSE redirect URL detected, handling with session...")
-                    
-                    # Use session to handle cookies and redirects
-                    session = requests.Session()
-                    
-                    # First, visit the BSE homepage to get cookies
-                    try:
-                        print(f"🍪 Getting BSE session cookies...")
-                        session.get('https://www.bseindia.com', timeout=10)
-                    except:
-                        pass  # Continue even if this fails
-                    
-                    # Better headers for BSE
-                    headers = {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                        'Accept-Language': 'en-US,en;q=0.5',
-                        'Accept-Encoding': 'gzip, deflate',
-                        'Connection': 'keep-alive',
-                        'Upgrade-Insecure-Requests': '1',
-                        'Sec-Fetch-Dest': 'document',
-                        'Sec-Fetch-Mode': 'navigate',
-                        'Sec-Fetch-Site': 'same-origin',
-                        'Referer': 'https://www.bseindia.com/',
-                        'DNT': '1',
-                        'Sec-GPC': '1'
-                    }
-                    
-                    print(f"⏰ Making request to BSE page with session...")
-                    response = session.get(url, headers=headers, timeout=20, allow_redirects=True)
-                    
-                    print(f"📊 Response status: {response.status_code}")
-                    print(f"📊 Content-Type: {response.headers.get('Content-Type', 'Unknown')}")
-                    print(f"📊 Final URL: {response.url}")
-                    
-                    if response.status_code == 200:
-                        content_type = response.headers.get('content-type', '').lower()
-                        
-                        if 'pdf' in content_type or 'application/octet-stream' in content_type:
-                            # It's a PDF, save it
-                            file_path = os.path.join(download_dir, filename)
-                            with open(file_path, 'wb') as f:
-                                f.write(response.content)
-                            
-                            file_size = os.path.getsize(file_path)
-                            print(f"✅ Downloaded: {filename} ({file_size} bytes)")
-                            return True
-                        
-                        elif 'text/html' in content_type:
-                            # It's HTML, try to extract the actual PDF link
-                            print(f"🔍 HTML page received, looking for PDF link...")
-                            
-                            from bs4 import BeautifulSoup
-                            soup = BeautifulSoup(response.content, 'html.parser')
-                            
-                            # Look for PDF links in the HTML
-                            pdf_links = []
-                            
-                            # Method 1: Look for iframe or embed with PDF
-                            for tag in soup.find_all(['iframe', 'embed'], src=True):
-                                if isinstance(tag, Tag):
-                                    src = tag.get('src')
-                                    if src and '.pdf' in src:
-                                        if str(src).startswith('http'):
-                                            pdf_links.append(str(src))
-                                        else:
-                                            pdf_links.append(f"https://www.bseindia.com{str(src)}")
-                            
-                            # Method 2: Look for JavaScript redirects
-                            for script in soup.find_all('script'):
-                                script_text = script.get_text()
-                                if script_text:
-                                    # Look for PDF URLs in JavaScript
-                                    import re
-                                    pdf_matches = re.findall(r'https?://[^\s"\']+\.pdf', script_text, re.IGNORECASE)
-                                    pdf_links.extend(pdf_matches)
-                            
-                            # Method 3: Look for meta refresh redirects
-                            for meta in soup.find_all('meta', {'http-equiv': 'refresh'}):
-                                if isinstance(meta, Tag):
-                                    content = meta.get('content', '')
-                                    content_str = str(content).lower() if content else ''
-                                    if 'url=' in content_str:
-                                        redirect_url = str(content).split('url=')[1].split(';')[0]
-                                        if '.pdf' in redirect_url:
-                                            if redirect_url.startswith('http'):
-                                                pdf_links.append(redirect_url)
-                                            else:
-                                                pdf_links.append(f"https://www.bseindia.com{redirect_url}")
-                            
-                            # Try each PDF link
-                            for pdf_url in pdf_links:
-                                try:
-                                    print(f"🎯 Trying PDF link: {pdf_url}")
-                                    pdf_response = session.get(pdf_url, headers=headers, timeout=15)
-                                    
-                                    if pdf_response.status_code == 200:
-                                        pdf_content_type = pdf_response.headers.get('content-type', '').lower()
-                                        
-                                        if 'pdf' in pdf_content_type or 'application/octet-stream' in pdf_content_type:
-                                            file_path = os.path.join(download_dir, filename)
-                                            with open(file_path, 'wb') as f:
-                                                f.write(pdf_response.content)
-                                            
-                                            file_size = os.path.getsize(file_path)
-                                            print(f"✅ Downloaded: {filename} ({file_size} bytes)")
-                                            return True
-                                            
-                                except Exception as e:
-                                    print(f"⚠️ Failed to download from {pdf_url}: {e}")
-                                    continue
-                            
-                            print(f"❌ Could not find working PDF link in HTML")
-                            return False
-                        
-                        else:
-                            print(f"❌ Unexpected content type: {content_type}")
-                            return False
-                    
-                    else:
-                        print(f"❌ BSE request failed with status: {response.status_code}")
-                        return False
+            # Handle BSE URLs with direct redirect approach
+            if 'bseindia.com' in url and 'AnnPdfOpen.aspx' in url:
+                print("🎯 BSE URL detected!")
+                return self._download_bse_document(url, file_path)
             
-            # For non-BSE URLs, use the original method
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'application/pdf,application/octet-stream,*/*',
-                'Accept-Language': 'en-US,en;q=0.9',
-                'Accept-Encoding': 'gzip, deflate',
-                'Connection': 'keep-alive',
-                'Upgrade-Insecure-Requests': '1',
-            }
-            
-            print(f"⏰ Making request to: {url}")
+            # Handle regular URLs
+            print("⏰ Making request to:", url)
             start_time = time.time()
             
-            response = requests.get(url, headers=headers, timeout=15, allow_redirects=True)
+            response = self.session.get(url, stream=True, timeout=30)
+            elapsed_time = time.time() - start_time
             
-            request_time = time.time() - start_time
-            print(f"⏰ Request completed in {request_time:.2f} seconds")
+            print(f"⏰ Request completed in {elapsed_time:.2f} seconds")
             print(f"📊 Response status: {response.status_code}")
-            print(f"📊 Content-Type: {response.headers.get('Content-Type', 'Unknown')}")
+            print(f"📊 Content-Type: {response.headers.get('content-type', 'unknown')}")
             print(f"📊 Final URL: {response.url}")
+            
+            if response.status_code == 200:
+                with open(file_path, 'wb') as f:
+                    downloaded = 0
+                    for chunk in response.iter_content(chunk_size=8192):
+                        if chunk:
+                            f.write(chunk)
+                            downloaded += len(chunk)
+            
+                print(f"✅ Downloaded: {filename} ({downloaded} bytes)")
+                time.sleep(self.delay)
+                return True
+            else:
+                print(f"❌ HTTP {response.status_code}: {response.reason}")
+                return False
+                
+        except Exception as e:
+            print(f"❌ Download error: {str(e)}")
+            return False
+
+    def _download_bse_document(self, url: str, file_path: str) -> bool:
+        """Handle BSE document downloads with proper URL transformation"""
+        try:
+            print("🔄 BSE URL detected, transforming to direct download link...")
+            
+            # Extract the Pname parameter from the URL
+            import re
+            from urllib.parse import parse_qs, urlparse
+            
+            parsed_url = urlparse(url)
+            query_params = parse_qs(parsed_url.query)
+            
+            if 'Pname' not in query_params:
+                print("❌ No Pname parameter found in BSE URL")
+                return False
+            
+            pname = query_params['Pname'][0]
+            print(f"📋 Extracted Pname: {pname}")
+            
+            # Clean up the Pname (remove backslashes and other issues)
+            clean_pname = pname.replace('\\', '').replace('%5C', '')
+            print(f"🧹 Cleaned Pname: {clean_pname}")
+            
+            # Construct the direct download URL
+            direct_url = f"https://www.bseindia.com/xml-data/corpfiling/AttachHis/{clean_pname}"
+            print(f"🔗 Direct URL: {direct_url}")
+            
+            # Method 1: Try direct download first
+            print("📥 Attempting direct download...")
+            if self._download_direct_bse(direct_url, file_path):
+                return True
+            
+            # Method 2: Try with session and proper headers
+            print("🔄 Trying with enhanced session headers...")
+            if self._download_bse_with_session(url, direct_url, file_path):
+                return True
+            
+            # Method 3: Try the original redirect approach with better headers
+            print("🔄 Trying original URL with enhanced headers...")
+            if self._download_bse_original(url, file_path):
+                return True
+            
+            print("❌ All BSE download methods failed")
+            return False
+            
+        except Exception as e:
+            print(f"❌ BSE download error: {str(e)}")
+            return False
+
+    def _download_direct_bse(self, direct_url: str, file_path: str) -> bool:
+        """Try direct download from transformed BSE URL"""
+        try:
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'application/pdf,application/octet-stream,*/*',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1',
+                'Sec-Fetch-Dest': 'document',
+                'Sec-Fetch-Mode': 'navigate',
+                'Sec-Fetch-Site': 'same-origin',
+                'Cache-Control': 'no-cache',
+                'Pragma': 'no-cache'
+            }
+            
+            response = requests.get(direct_url, headers=headers, stream=True, timeout=30)
+            print(f"📊 Direct download status: {response.status_code}")
+            
+            if response.status_code == 200 and 'application/pdf' in response.headers.get('content-type', ''):
+                with open(file_path, 'wb') as f:
+                    downloaded = 0
+                    for chunk in response.iter_content(chunk_size=8192):
+                        if chunk:
+                            f.write(chunk)
+                            downloaded += len(chunk)
+                
+                print(f"✅ Direct BSE download successful: {os.path.basename(file_path)} ({downloaded} bytes)")
+                time.sleep(self.delay)
+                return True
+            
+            return False
+            
+        except Exception as e:
+            print(f"❌ Direct BSE download failed: {str(e)}")
+            return False
+
+    def _download_bse_with_session(self, original_url: str, direct_url: str, file_path: str) -> bool:
+        """Try BSE download with proper session handling"""
+        try:
+            # Create a fresh session for BSE
+            bse_session = requests.Session()
+            bse_session.headers.update({
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1',
+                'Sec-Fetch-Dest': 'document',
+                'Sec-Fetch-Mode': 'navigate',
+                'Sec-Fetch-Site': 'none',
+                'Cache-Control': 'max-age=0'
+            })
+            
+            # First, visit BSE homepage to establish session
+            print("🏠 Establishing BSE session...")
+            bse_session.get("https://www.bseindia.com", timeout=10)
+            
+            # Then try the original URL to get any necessary cookies/session data
+            print("🍪 Getting BSE session data...")
+            response1 = bse_session.get(original_url, allow_redirects=True, timeout=10)
+            
+            if response1.status_code == 200:
+                # Now try the direct URL with the session
+                print("📥 Trying direct URL with session...")
+                response2 = bse_session.get(direct_url, stream=True, timeout=30)
+                
+                if response2.status_code == 200 and 'application/pdf' in response2.headers.get('content-type', ''):
+                    with open(file_path, 'wb') as f:
+                        downloaded = 0
+                        for chunk in response2.iter_content(chunk_size=8192):
+                            if chunk:
+                                f.write(chunk)
+                                downloaded += len(chunk)
+                    
+                    print(f"✅ BSE session download successful: {os.path.basename(file_path)} ({downloaded} bytes)")
+                    time.sleep(self.delay)
+                    return True
+            
+            return False
+            
+        except Exception as e:
+            print(f"❌ BSE session download failed: {str(e)}")
+            return False
+
+    def _download_bse_original(self, url: str, file_path: str) -> bool:
+        """Try original BSE URL with enhanced headers"""
+        try:
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1',
+                'Sec-Fetch-Dest': 'document',
+                'Sec-Fetch-Mode': 'navigate',
+                'Sec-Fetch-Site': 'same-origin',
+                'Referer': 'https://www.bseindia.com/'
+            }
+            
+            response = requests.get(url, headers=headers, allow_redirects=True, stream=True, timeout=30)
+            print(f"📊 Original BSE URL status: {response.status_code}")
+            print(f"📊 Final URL after redirects: {response.url}")
             
             if response.status_code == 200:
                 content_type = response.headers.get('content-type', '').lower()
                 
-                if 'pdf' in content_type or 'application/octet-stream' in content_type:
-                    file_path = os.path.join(download_dir, filename)
+                # Check if it's a PDF or if we got redirected to the PDF
+                if 'application/pdf' in content_type or response.url.endswith('.pdf'):
                     with open(file_path, 'wb') as f:
-                        f.write(response.content)
+                        downloaded = 0
+                        for chunk in response.iter_content(chunk_size=8192):
+                            if chunk:
+                                f.write(chunk)
+                                downloaded += len(chunk)
                     
-                    file_size = os.path.getsize(file_path)
-                    print(f"✅ Downloaded: {filename} ({file_size} bytes)")
+                    print(f"✅ Original BSE URL download successful: {os.path.basename(file_path)} ({downloaded} bytes)")
+                    time.sleep(self.delay)
                     return True
                 else:
-                    print(f"❌ Not a PDF file. Content-Type: {content_type}")
-                    return False
-            else:
-                print(f"❌ HTTP Error: {response.status_code}")
-                return False
-                
-        except requests.exceptions.Timeout:
-            print(f"❌ Request timeout")
+                    print(f"❌ Response is not PDF, content-type: {content_type}")
+            
             return False
-        except requests.exceptions.RequestException as e:
-            print(f"❌ Request error: {e}")
-            return False
+            
         except Exception as e:
-            print(f"❌ Unexpected error: {e}")
+            print(f"❌ Original BSE URL download failed: {str(e)}")
             return False
     
     def scrape_company_data(self, symbol: str, download_docs=True):

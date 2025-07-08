@@ -14,7 +14,46 @@ from datetime import datetime
 import webbrowser
 from pathlib import Path
 
-# Import our enhanced scraper
+# Define fallback classes first
+class FallbackScreenerScraper:
+    def __init__(self, delay=2):
+        self.delay = delay
+    
+    def find_company_by_symbol(self, symbol):
+        print(f"❌ Fallback scraper - cannot find {symbol}")
+        return None
+    
+    def extract_concall_data(self, url):
+        print(f"❌ Fallback scraper - cannot extract data from {url}")
+        return None
+    
+    def generate_filename(self, company, doc, index):
+        """Generate filename for document"""
+        doc_type = getattr(doc, 'doc_type', 'document')
+        date_info = getattr(doc, 'date', f'doc-{index+1}')
+        return f"{company}_{date_info}_{doc_type}.pdf"
+    
+    def download_document(self, url, filename, download_dir):
+        """Download document (fallback implementation)"""
+        print(f"❌ Fallback scraper - cannot download {filename}")
+        return False
+
+class FallbackCompanyData:
+    def __init__(self, company_name="", symbol="", company_url="", concalls=None, annual_reports=None):
+        self.company_name = company_name
+        self.symbol = symbol
+        self.company_url = company_url
+        self.concalls = concalls or []
+        self.annual_reports = annual_reports or []
+
+class FallbackConcallDocument:
+    def __init__(self, doc_type="", date="", url="", title=""):
+        self.doc_type = doc_type
+        self.date = date
+        self.url = url
+        self.title = title
+
+# Import our enhanced scraper with fallback
 try:
     from screener_scraper import EnhancedScreenerScraper, CompanyData, ConcallDocument
     print("✅ Successfully imported EnhancedScreenerScraper")
@@ -24,46 +63,6 @@ except ImportError as e:
     print(f"❌ Import error: {e}")
     print("Using fallback classes...")
     
-    # Add a fallback class definition
-    class FallbackScreenerScraper:
-        def __init__(self, delay=2):
-            self.delay = delay
-        
-        def find_company_by_symbol(self, symbol):
-            print(f"❌ Fallback scraper - cannot find {symbol}")
-            return None
-        
-        def extract_concall_data(self, url):
-            print(f"❌ Fallback scraper - cannot extract data from {url}")
-            return None
-        
-        def generate_filename(self, company, doc, index):
-            """Generate filename for document"""
-            doc_type = getattr(doc, 'doc_type', 'document')
-            date_info = getattr(doc, 'date', f'doc-{index+1}')
-            return f"{company}_{date_info}_{doc_type}.pdf"
-        
-        def download_document(self, url, filename, download_dir):
-            """Download document (fallback implementation)"""
-            print(f"❌ Fallback scraper - cannot download {filename}")
-            return False
-    
-    class FallbackCompanyData:
-        def __init__(self, company_name="", symbol="", company_url="", concalls=None, annual_reports=None):
-            self.company_name = company_name
-            self.symbol = symbol
-            self.company_url = company_url
-            self.concalls = concalls or []
-            self.annual_reports = annual_reports or []
-
-    # Define fallback ConcallDocument
-    class FallbackConcallDocument:
-        def __init__(self, doc_type="", date="", url="", title=""):
-            self.doc_type = doc_type
-            self.date = date
-            self.url = url
-            self.title = title
-
     # Use the fallback classes
     EnhancedScreenerScraper = FallbackScreenerScraper
     CompanyData = FallbackCompanyData
