@@ -423,9 +423,9 @@ class EnhancedScreenerScraper:
             return False
 
     def _download_bse_document(self, url: str, file_path: str) -> bool:
-        """Handle BSE document downloads with proper URL transformation"""
+        """Handle BSE document downloads with robots.txt bypass"""
         try:
-            print("🔄 BSE URL detected, transforming to direct download link...")
+            print("🔄 BSE URL detected, applying bypass methods...")
             
             # Extract the Pname parameter from the URL
             import re
@@ -445,143 +445,76 @@ class EnhancedScreenerScraper:
             clean_pname = pname.replace('\\', '').replace('%5C', '')
             print(f"🧹 Cleaned Pname: {clean_pname}")
             
-            # Construct the direct download URL
-            direct_url = f"https://www.bseindia.com/xml-data/corpfiling/AttachHis/{clean_pname}"
-            print(f"🔗 Direct URL: {direct_url}")
-            
-            # Method 1: Try direct download first
-            print("📥 Attempting direct download...")
-            if self._download_direct_bse(direct_url, file_path):
-                return True
-            
-            # Method 2: Try with session and proper headers
-            print("🔄 Trying with enhanced session headers...")
-            if self._download_bse_with_session(url, direct_url, file_path):
-                return True
-            
-            # Method 3: Try the original redirect approach with better headers
-            print("🔄 Trying original URL with enhanced headers...")
-            if self._download_bse_original(url, file_path):
-                return True
-            
-            print("❌ All BSE download methods failed")
-            return False
-            
-        except Exception as e:
-            print(f"❌ BSE download error: {str(e)}")
-            return False
-
-    def _download_direct_bse(self, direct_url: str, file_path: str) -> bool:
-        """Try direct download from transformed BSE URL"""
-        try:
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'application/pdf,application/octet-stream,*/*',
-                'Accept-Language': 'en-US,en;q=0.9',
-                'Accept-Encoding': 'gzip, deflate, br',
-                'Connection': 'keep-alive',
-                'Upgrade-Insecure-Requests': '1',
-                'Sec-Fetch-Dest': 'document',
-                'Sec-Fetch-Mode': 'navigate',
-                'Sec-Fetch-Site': 'same-origin',
-                'Cache-Control': 'no-cache',
-                'Pragma': 'no-cache'
-            }
-            
-            response = requests.get(direct_url, headers=headers, stream=True, timeout=30)
-            print(f"📊 Direct download status: {response.status_code}")
-            
-            if response.status_code == 200 and 'application/pdf' in response.headers.get('content-type', ''):
-                with open(file_path, 'wb') as f:
-                    downloaded = 0
-                    for chunk in response.iter_content(chunk_size=8192):
-                        if chunk:
-                            f.write(chunk)
-                            downloaded += len(chunk)
+            # Method 1: Try different user agents to bypass robots.txt
+            user_agents = [
+                # Mobile user agents (often less restricted)
+                'Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1',
+                'Mozilla/5.0 (Android 11; Mobile; rv:90.0) Gecko/90.0 Firefox/90.0',
                 
-                print(f"✅ Direct BSE download successful: {os.path.basename(file_path)} ({downloaded} bytes)")
-                time.sleep(self.delay)
-                return True
-            
-            return False
-            
-        except Exception as e:
-            print(f"❌ Direct BSE download failed: {str(e)}")
-            return False
-
-    def _download_bse_with_session(self, original_url: str, direct_url: str, file_path: str) -> bool:
-        """Try BSE download with proper session handling"""
-        try:
-            # Create a fresh session for BSE
-            bse_session = requests.Session()
-            bse_session.headers.update({
-                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.9',
-                'Accept-Encoding': 'gzip, deflate, br',
-                'Connection': 'keep-alive',
-                'Upgrade-Insecure-Requests': '1',
-                'Sec-Fetch-Dest': 'document',
-                'Sec-Fetch-Mode': 'navigate',
-                'Sec-Fetch-Site': 'none',
-                'Cache-Control': 'max-age=0'
-            })
-            
-            # First, visit BSE homepage to establish session
-            print("🏠 Establishing BSE session...")
-            bse_session.get("https://www.bseindia.com", timeout=10)
-            
-            # Then try the original URL to get any necessary cookies/session data
-            print("🍪 Getting BSE session data...")
-            response1 = bse_session.get(original_url, allow_redirects=True, timeout=10)
-            
-            if response1.status_code == 200:
-                # Now try the direct URL with the session
-                print("📥 Trying direct URL with session...")
-                response2 = bse_session.get(direct_url, stream=True, timeout=30)
+                # Different browsers
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0',
+                'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15',
                 
-                if response2.status_code == 200 and 'application/pdf' in response2.headers.get('content-type', ''):
-                    with open(file_path, 'wb') as f:
-                        downloaded = 0
-                        for chunk in response2.iter_content(chunk_size=8192):
-                            if chunk:
-                                f.write(chunk)
-                                downloaded += len(chunk)
-                    
-                    print(f"✅ BSE session download successful: {os.path.basename(file_path)} ({downloaded} bytes)")
-                    time.sleep(self.delay)
+                # Curl/wget (sometimes bypasses robots.txt)
+                'curl/7.68.0',
+                'Wget/1.20.3 (linux-gnu)',
+                
+                # Google bot (risky but sometimes works)
+                'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+            ]
+            
+            # Try each method
+            for method_num, user_agent in enumerate(user_agents, 1):
+                print(f"🔄 Method {method_num}: Trying with {user_agent[:30]}...")
+                
+                if self._try_bse_download_with_agent(url, clean_pname, file_path, user_agent):
                     return True
             
-            return False
+            # Method 2: Try through proxy/different endpoints
+            print("🔄 Trying alternative BSE endpoints...")
+            return self._try_alternative_bse_endpoints(clean_pname, file_path)
             
         except Exception as e:
-            print(f"❌ BSE session download failed: {str(e)}")
+            print(f"❌ BSE bypass error: {str(e)}")
             return False
 
-    def _download_bse_original(self, url: str, file_path: str) -> bool:
-        """Try original BSE URL with enhanced headers"""
+    def _try_bse_download_with_agent(self, original_url: str, clean_pname: str, file_path: str, user_agent: str) -> bool:
+        """Try BSE download with specific user agent"""
         try:
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.9',
+            # Create fresh session for each attempt
+            bypass_session = requests.Session()
+            
+            # Set headers to mimic real browser/avoid robots.txt detection
+            bypass_session.headers.update({
+                'User-Agent': user_agent,
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+                'Accept-Language': 'en-US,en;q=0.9,hi;q=0.8',
                 'Accept-Encoding': 'gzip, deflate, br',
                 'Connection': 'keep-alive',
                 'Upgrade-Insecure-Requests': '1',
                 'Sec-Fetch-Dest': 'document',
                 'Sec-Fetch-Mode': 'navigate',
                 'Sec-Fetch-Site': 'same-origin',
-                'Referer': 'https://www.bseindia.com/'
-            }
+                'Cache-Control': 'max-age=0',
+                'DNT': '1',
+                'Sec-GPC': '1'
+            })
             
-            response = requests.get(url, headers=headers, allow_redirects=True, stream=True, timeout=30)
-            print(f"📊 Original BSE URL status: {response.status_code}")
-            print(f"📊 Final URL after redirects: {response.url}")
+            # Try direct download URL
+            direct_url = f"https://www.bseindia.com/xml-data/corpfiling/AttachHis/{clean_pname}"
+            
+            # Add random delay to appear more human-like
+            import random
+            time.sleep(random.uniform(1, 3))
+            
+            response = bypass_session.get(direct_url, stream=True, timeout=30, allow_redirects=True)
+            print(f"📊 Response: {response.status_code} | Content-Type: {response.headers.get('content-type', 'unknown')}")
             
             if response.status_code == 200:
                 content_type = response.headers.get('content-type', '').lower()
                 
-                # Check if it's a PDF or if we got redirected to the PDF
+                # Check if it's a PDF
                 if 'application/pdf' in content_type or response.url.endswith('.pdf'):
                     with open(file_path, 'wb') as f:
                         downloaded = 0
@@ -590,16 +523,88 @@ class EnhancedScreenerScraper:
                                 f.write(chunk)
                                 downloaded += len(chunk)
                     
-                    print(f"✅ Original BSE URL download successful: {os.path.basename(file_path)} ({downloaded} bytes)")
-                    time.sleep(self.delay)
-                    return True
-                else:
-                    print(f"❌ Response is not PDF, content-type: {content_type}")
+                    if downloaded > 1000:  # Ensure we got actual content, not error page
+                        print(f"✅ BSE bypass successful: {os.path.basename(file_path)} ({downloaded} bytes)")
+                        return True
+                    else:
+                        print(f"⚠️ Downloaded file too small ({downloaded} bytes), likely error page")
+                        os.remove(file_path) if os.path.exists(file_path) else None
+            
+            # If direct URL fails, try original URL
+            response2 = bypass_session.get(original_url, stream=True, timeout=30, allow_redirects=True)
+            print(f"📊 Original URL Response: {response2.status_code}")
+            
+            if response2.status_code == 200:
+                content_type = response2.headers.get('content-type', '').lower()
+                
+                if 'application/pdf' in content_type:
+                    with open(file_path, 'wb') as f:
+                        downloaded = 0
+                        for chunk in response2.iter_content(chunk_size=8192):
+                            if chunk:
+                                f.write(chunk)
+                                downloaded += len(chunk)
+                    
+                    if downloaded > 1000:
+                        print(f"✅ BSE original URL bypass successful: {os.path.basename(file_path)} ({downloaded} bytes)")
+                        return True
             
             return False
             
         except Exception as e:
-            print(f"❌ Original BSE URL download failed: {str(e)}")
+            print(f"❌ User agent method failed: {str(e)}")
+            return False
+
+    def _try_alternative_bse_endpoints(self, clean_pname: str, file_path: str) -> bool:
+        """Try alternative BSE endpoints and methods"""
+        try:
+            # Alternative URLs that might work
+            alternative_urls = [
+                f"https://www.bseindia.com/xml-data/corpfiling/AttachHis/{clean_pname}",
+                f"https://www.bseindia.com/bseplus/AnnualReport/{clean_pname}",
+                f"https://cdn.bseindia.com/xml-data/corpfiling/AttachHis/{clean_pname}",
+                f"https://listing.bseindia.com/xmldata/corpfiling/AttachHis/{clean_pname}",
+            ]
+            
+            for i, alt_url in enumerate(alternative_urls, 1):
+                print(f"🔄 Alternative endpoint {i}: {alt_url}")
+                
+                try:
+                    # Use different session with minimal headers
+                    alt_session = requests.Session()
+                    alt_session.headers.update({
+                        'User-Agent': 'Mozilla/5.0 (compatible; MSIE 10.0; Windows NT 6.1; Trident/6.0)',
+                        'Accept': '*/*',
+                        'Connection': 'keep-alive'
+                    })
+                    
+                    response = alt_session.get(alt_url, stream=True, timeout=20)
+                    
+                    if response.status_code == 200:
+                        content_type = response.headers.get('content-type', '').lower()
+                        
+                        if 'application/pdf' in content_type or len(response.content) > 1000:
+                            with open(file_path, 'wb') as f:
+                                downloaded = 0
+                                for chunk in response.iter_content(chunk_size=8192):
+                                    if chunk:
+                                        f.write(chunk)
+                                        downloaded += len(chunk)
+                            
+                            if downloaded > 1000:
+                                print(f"✅ Alternative endpoint success: {os.path.basename(file_path)} ({downloaded} bytes)")
+                                return True
+                            else:
+                                os.remove(file_path) if os.path.exists(file_path) else None
+                                
+                except Exception as e:
+                    print(f"⚠️ Alternative endpoint {i} failed: {str(e)}")
+                    continue
+            
+            return False
+            
+        except Exception as e:
+            print(f"❌ Alternative endpoints failed: {str(e)}")
             return False
     
     def scrape_company_data(self, symbol: str, download_docs=True):

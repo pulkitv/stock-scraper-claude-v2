@@ -13,6 +13,7 @@ import json
 from datetime import datetime
 import webbrowser
 from pathlib import Path
+import requests
 
 # Define fallback classes first
 class FallbackScreenerScraper:
