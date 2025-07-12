@@ -1,0 +1,18 @@
+{
+  "api": {
+    "host": "0.0.0.0",
+    "port": 8000,
+    "debug": false
+  },
+  "scraper": {
+    "default_delay": 2,
+    "max_concalls": 20,
+    "max_annual_reports": 5,
+    "download_timeout": 30
+  },
+  "claude": {
+    "tools_enabled": true,
+    "max_companies_per_request": 10,
+    "analysis_cache_ttl": 3600
+  }
+}
