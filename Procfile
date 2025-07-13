@@ -1,1 +1,1 @@
-web: gunicorn -c gunicorn.conf.py wsgi:application
+web: python mcp_http_server.py
