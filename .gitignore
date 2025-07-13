@@ -16,45 +16,42 @@ parts/
 sdist/
 var/
 wheels/
-pip-wheel-metadata/
-share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
-MANIFEST
 
 # Virtual Environment
 venv/
 env/
 ENV/
-stock-scraper-env/
+.venv/
 
 # IDE
 .vscode/
 .idea/
 *.swp
 *.swo
-*~
 
 # OS
 .DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
 Thumbs.db
+
+# Environment variables
+.env
+.env.local
+.env.*.local
 
 # Logs
 *.log
-ngrok.log
+logs/
 
-# Temporary files
-*.tmp
-*.temp
-ngrok_url.txt
-claude_desktop.pid
-claude_integration.pid
+# Downloaded files (your app creates these)
+downloads/
 
-# Railway
-.railway/
+# Cache
+.cache/
+.pytest_cache/
+
+# FastAPI
+*.db
+*.sqlite3
